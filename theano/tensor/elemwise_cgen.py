@@ -407,7 +407,7 @@ def make_reordered_loop(init_loop_orders, olv_index, dtypes, inner_task, sub,
         if i == 0:
             if openmp:
                 openmp_elemwise_minsize = theano.config.openmp_elemwise_minsize
-                forloop += """#pragma omp parallel for if( %(total)s >=%(openmp_elemwise_minsize)s)\n""" % locals()
+                forloop += """#pragma omp parallel for collapse(%d)\n"""%(nnested)
         forloop += "for(int %(iterv)s = 0; %(iterv)s<%(total)s; %(iterv)s++)" % locals()
 
         loop = """

@@ -1815,17 +1815,20 @@ class GCC_compiler(Compiler):
             for f in cxxflags:
                 # If the user give an -march=X parameter, don't add one ourself
                 if ((f.startswith("--march=") or f.startswith("-march="))):
+                    '''
                     _logger.warn(
                         "WARNING: your Theano flags `gcc.cxxflags` specify"
                         " an `-march=X` flags.\n"
                         "         It is better to let Theano/g++ find it"
                         " automatically, but we don't do it now")
+                    '''
                     detect_march = False
                     GCC_compiler.march_flags = []
                     break
 
         if ('g++' not in theano.config.cxx and
                 'clang++' not in theano.config.cxx):
+            '''
             _logger.warn(
                 "OPTIMIZATION WARNING: your Theano flag `cxx` seems not to be"
                 " the g++ compiler. So we disable the compiler optimization"
@@ -1834,6 +1837,7 @@ class GCC_compiler(Compiler):
                 "         You can add those parameters to the compiler yourself"
                 " via the Theano flag `gcc.cxxflags`."
             )
+            '''
             detect_march = False
 
         if detect_march:
