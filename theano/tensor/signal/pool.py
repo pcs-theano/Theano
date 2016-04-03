@@ -14,6 +14,7 @@ import numpy
 
 import theano
 from theano import gof, Op, tensor, Variable, Apply
+from theano.tensor.opt import register_canonicalize
 
 
 def max_pool_2d_same_size(input, patch_size):
@@ -354,7 +355,209 @@ class Pool(Op):
         ds0, ds1 = self.ds
         st0, st1 = self.st
         pd0, pd1 = self.padding
-        ccode = """
+
+        d={}
+        d["x"]=x
+        d["ds1"]=ds1
+        d["ds0"]=ds0
+        d["st0"]=st0
+        d["st1"]=st1
+        def my_dup(st, start,end):
+            s = ""
+            for i in xrange(start, end):
+                d["index"] = i
+                s += st % d
+            return s + "\n"
+        ret = """
+        {
+        int typenum = PyArray_ObjectType((PyObject*)%(x)s, 0);
+        int x_shp0_usable;
+        int x_shp1_usable;
+        int z_shp0, z_shp1;
+        if(PyArray_NDIM(%(x)s)!=4)
+        {
+            PyErr_SetString(PyExc_ValueError, "x must be a 4d ndarray");
+            %(fail)s;
+        }
+        z_shp0 = PyArray_DIMS(%(x)s)[2] / %(st0)s; //stride 0
+        z_shp1 = PyArray_DIMS(%(x)s)[3] / %(st1)s; //stride 1
+        x_shp0_usable = PyArray_DIMS(%(x)s)[2];
+        x_shp1_usable = PyArray_DIMS(%(x)s)[3];
+        int rowEdge= ((PyArray_DIMS(%(x)s)[2] %% %(st0)s) !=0 );
+        int colEdge= ((PyArray_DIMS(%(x)s)[3] %% %(st1)s) !=0 );
+        if (%(ignore_border)s)
+        {
+            z_shp0 = 1 +  (x_shp0_usable - %(ds0)s) / %(st0)s;
+            z_shp1 = 1 + (x_shp0_usable - %(ds1)s) / %(st1)s;
+        }
+        else
+        {
+            z_shp0 += rowEdge;
+            z_shp1 += colEdge;
+        }
+        if ((!%(z)s)
+          || *PyArray_DIMS(%(z)s)!=4
+          ||(PyArray_DIMS(%(z)s)[0] != PyArray_DIMS(%(x)s)[0])
+          ||(PyArray_DIMS(%(z)s)[1] != PyArray_DIMS(%(x)s)[1])
+          ||(PyArray_DIMS(%(z)s)[2] != z_shp0)
+          ||(PyArray_DIMS(%(z)s)[3] != z_shp1)
+          )
+        {
+          if(%(z)s)Py_XDECREF(%(z)s);
+          npy_intp dims[4] = {0,0,0,0};
+          dims[0]=PyArray_DIMS(%(x)s)[0];
+          dims[1]=PyArray_DIMS(%(x)s)[1];
+          dims[2]=z_shp0;
+          dims[3]=z_shp1;
+          //TODO: zeros not necessary
+          %(z)s = (PyArrayObject*) PyArray_ZEROS(4, dims, typenum,0);
+        }
+        if (z_shp0 && z_shp1)
+        {
+            npy_intp *inStrds=PyArray_STRIDES(%(x)s);
+            npy_intp *zStrds=PyArray_STRIDES(%(z)s);
+            npy_intp *inDim=PyArray_DIMS(%(x)s);
+            npy_intp *zDim=PyArray_DIMS(%(z)s);
+        """ % locals()
+        if self.ignore_border == False:
+            ret += """
+                    z_shp0 = 1 +  (x_shp0_usable - %(ds0)s) / %(st0)s;
+                    z_shp1 = 1 + (x_shp0_usable - %(ds1)s) / %(st1)s;
+                    """ % d
+        ret += """
+            //DownSample
+            #pragma omp parallel for schedule(dynamic,10) num_threads(32)
+            for(int b=0;b<PyArray_DIMS(%(x)s)[0];b++){
+              for(int k=0;k<PyArray_DIMS(%(x)s)[1];k++){
+                const dtype_%(x)s * __restrict__ in=
+                    (dtype_%(x)s *)(PyArray_GETPTR2(%(x)s, b, k));
+                dtype_%(x)s * __restrict__ out=
+                    (dtype_%(x)s *)(PyArray_GETPTR2(%(z)s, b, k));
+                dtype_%(x)s buf[%(ds1)s];
+                for(int zi=0; zi<z_shp0; zi++)
+                {
+                    dtype_%(x)s * __restrict__ outRow=&out[zi*zDim[3]];
+                    #pragma prefetch outRow
+                    for (int zj=0; zj<z_shp1; zj++)
+                    {
+
+                        int i=zi * %(st0)s;
+                        int j = zj * %(st1)s;
+                        const dtype_%(x)s * __restrict__ inRow=&in[i*inDim[3]];
+                        #pragma simd
+                        for(int m =0; m<%(ds1)s;m++)
+                            buf[m]=inRow[m+j]>inRow[inDim[3] + m+j]?
+                                inRow[m+j]:inRow[inDim[3]+ m+j];
+                """ % locals()
+        ret += my_dup("\n#pragma simd\n"
+                      "for(int m =0; m<%(ds1)s;m++)\n"
+                      "buf[m]=buf[m]>inRow[%(index)s * inDim[3] + m+j]?"
+                      "buf[m]:inRow[%(index)s * inDim[3]+ m+j];",2,ds0)
+        ret += """
+                    #pragma simd
+                    for(int m=1; m<%(ds1)s;m++)
+                    {
+                        buf[0] = buf[0] > buf[m]?buf[0]:buf[m];
+                    }
+                   outRow[zj] = buf[0];
+
+                  """ % locals()
+        ret += """
+                } //for zj
+               } //for zi
+              """
+        #print (ignore_border == 0)
+        #sys.exit(0)
+        if self.ignore_border == False:
+            ret += """
+                int RowStart = z_shp0;
+                int ColStart = z_shp1;
+                int RowEnd = x_shp0_usable / %(st0)s + rowEdge;
+                int ColEnd = x_shp1_usable / %(st1)s + colEdge;
+                if(RowStart < RowEnd) // has Row needs to compute
+                {
+                    for(int zi = RowStart;zi<RowEnd;zi++)
+                    {
+                        dtype_%(x)s * __restrict__ outRow=&out[zi*zDim[3]];
+                        for(int zj = 0; zj < ColStart;zj++)
+                        {
+                            buf[0]=0;
+                            for(int m =0;m<%(ds0)s;m++)
+                            {
+                                int i =zi * %(st0)s +m;
+                                if(i >= x_shp0_usable)continue;
+                                const dtype_%(x)s * __restrict__ inRow=
+                                    &in[i* inDim[3]];
+                                for(int n =0; n<%(ds1)s;n++)
+                                {
+                                    int j = zj* %(st1)s + n;
+                                    buf[0] = buf[0]>inRow[j]?buf[0]:inRow[j];
+                                }
+                            }
+                            outRow[zj]=buf[0];
+                        }
+                    }
+                }
+
+                if(ColStart < ColEnd)
+                {
+                    for(int zi = 0;zi<RowStart;zi++)
+                    {
+                        dtype_%(x)s * __restrict__ outRow=&out[zi*zDim[3]];
+                        for(int zj=ColStart;zj<ColEnd;zj++)
+                        {
+                            buf[0]=0;
+                            for(int m =0;m<%(ds0)s;m++)
+                            {
+                                int i =zi * %(st0)s +m;
+                                const dtype_%(x)s * __restrict__ inRow=
+                                    &in[i* inDim[3]];
+                                for(int n =0; n<%(ds1)s;n++)
+                                {
+                                    int j = zj* %(st1)s + n;
+                                    if(j>= x_shp1_usable)continue;
+                                    buf[0] = buf[0]>inRow[j]?buf[0]:inRow[j];
+                                }
+                            }
+                            outRow[zj]=buf[0];
+                        }
+                    }
+                }
+
+                for(int zi = RowStart;zi<RowEnd;zi++)
+                {
+                    dtype_%(x)s * __restrict__ outRow=&out[zi*zDim[3]];
+                    for(int zj=ColStart;zj<ColEnd;zj++)
+                    {
+                        buf[0]=0;
+                        for(int m =0;m<%(ds0)s;m++)
+                        {
+                            int i = zi * %(st0)s+m;
+                            if(i >= x_shp0_usable)
+                                continue;
+                            const dtype_%(x)s * __restrict__ inRow=
+                                &in[i* inDim[3]];
+                            for(int n =0; n<%(ds1)s;n++)
+                            {
+                                int j = zj* %(st1)s + n;
+                                if(j>=x_shp1_usable)
+                                    continue;
+                                buf[0] = buf[0]>inRow[j]?buf[0]:inRow[j];
+                            }
+                        }
+                        outRow[zj]=buf[0];
+                    }
+                }
+        """ % d
+        ret += """
+                    } //for k
+                } //for b
+            }
+        }
+        """
+        #Warn: ignore border, padding, sum, average pooling not handled
+        return ret
+        theano_07_ccode = """
         int typenum = PyArray_ObjectType((PyObject*)%(x)s, 0);
         int z_r, z_c; // shape of the output
         int r, c; // shape of the padded_input
@@ -437,6 +640,7 @@ class Pool(Op):
         dtype_%(x)s collector; // temp var for the value in a region
         if (z_r && z_c)
         {
+            //#pragma omp parallel for schedule(dynamic,10) num_threads(32)
             for(int b=0; b<PyArray_DIMS(%(x)s)[0]; b++){
               for(int k=0; k<PyArray_DIMS(%(x)s)[1]; k++){
                 for(int i=0; i< z_r; i++){
@@ -472,32 +676,35 @@ class Pool(Op):
         """
         if self.mode == 'max':
             ccode += """
-                    // use the first element as the initial value of collector
-                    collector = ((dtype_%(x)s*)(PyArray_GETPTR4(%(x)s,b,k,r_st,c_st)))[0];
-                    // go through the pooled region in the unpadded input
-                    for(int m=r_st; m<r_end; m++)
-                    {
-                      for(int n=c_st; n<c_end; n++)
-                      {
-                        dtype_%(x)s a = ((dtype_%(x)s*)(PyArray_GETPTR4(%(x)s,b,k,m,n)))[0];
-                        collector = (a > collector) ? a : collector;
-                      }
-                    }
-                    z[0] = collector;
+               // use the first element as the initial value of collector
+               collector =
+                    ((dtype_%(x)s*)(PyArray_GETPTR4(%(x)s,b,k,r_st,c_st)))[0];
+               // go through the pooled region in the unpadded input
+               for(int m=r_st; m<r_end; m++)
+               {
+                   for(int n=c_st; n<c_end; n++)
+                   {
+                       dtype_%(x)s a =
+                            ((dtype_%(x)s*)(PyArray_GETPTR4(%(x)s,b,k,m,n)))[0];
+                       collector = (a > collector) ? a : collector;
+                   }
+               }
+               z[0] = collector;
             """
         elif self.mode in ('sum', 'average_exc_pad', 'average_inc_pad'):
             ccode += """
-                    // initialize the sum at zero
-                    collector = ((dtype_%(x)s)(0));
-                    // go through the pooled region in the unpadded input
-                    for(int m=r_st; m<r_end; m++)
-                    {
-                      for(int n=c_st; n<c_end; n++)
-                      {
-                        dtype_%(x)s a = ((dtype_%(x)s*)(PyArray_GETPTR4(%(x)s,b,k,m,n)))[0];
-                        collector += a;
-                      }
-                    }
+               // initialize the sum at zero
+               collector = ((dtype_%(x)s)(0));
+               // go through the pooled region in the unpadded input
+               for(int m=r_st; m<r_end; m++)
+               {
+                   for(int n=c_st; n<c_end; n++)
+                   {
+                       dtype_%(x)s a =
+                            ((dtype_%(x)s*)(PyArray_GETPTR4(%(x)s,b,k,m,n)))[0];
+                       collector += a;
+                   }
+               }
             """
             if self.mode == "sum":
                 ccode += """
@@ -562,6 +769,7 @@ class PoolGrad(Op):
             ignore_border flags.
 
         """
+
         if len(imgshape) < 2:
             raise TypeError('imgshape must have at least two elements '
                             '(rows, cols)')
@@ -588,7 +796,7 @@ class PoolGrad(Op):
                 nr = tensor.switch(tensor.ge(st[0], ds[0]),
                                    (r - 1) // st[0] + 1,
                                    tensor.maximum(0, (r - 1 - ds[0]) //
-                                                  st[0] + 1) + 1)
+                                                     st[0] + 1) + 1)
             elif st[0] >= ds[0]:
                 nr = (r - 1) // st[0] + 1
             else:
@@ -598,7 +806,7 @@ class PoolGrad(Op):
                 nc = tensor.switch(tensor.ge(st[1], ds[1]),
                                    (c - 1) // st[1] + 1,
                                    tensor.maximum(0, (c - 1 - ds[1]) //
-                                                  st[1] + 1) + 1)
+                                                     st[1] + 1) + 1)
             elif st[1] >= ds[1]:
                 nc = (c - 1) // st[1] + 1
             else:
@@ -674,7 +882,8 @@ class MaxPoolGrad(PoolGrad):
                         col_end = builtins.min(col_st + ds1, img_cols)
                         for row_ind in xrange(row_st, row_end):
                             for col_ind in xrange(col_st, col_end):
-                                if (maxout[n, k, r, c] == y[n, k, row_ind, col_ind]):
+                                if (maxout[n, k, r, c] ==
+                                    y[n, k, row_ind, col_ind]):
                                     gx[n, k, row_ind, col_ind] += gz[n, k, r, c]
         # unpad the image
         gx = gx[:, :, pad_h:(img_rows - pad_h), pad_w:(img_cols - pad_w)]
@@ -698,11 +907,21 @@ class MaxPoolGrad(PoolGrad):
         ds0, ds1 = self.ds
         st0, st1 = self.st
         pd0, pd1 = self.padding
-        return """
-        // sanity checks
+
+        d={}
+        d['ds0']=ds0
+        d['ds1']=ds1
+        d['st1']=st1
+        d['st0']=st0
+
+        ret = """
+        {
         int x_typenum = PyArray_ObjectType((PyObject*)%(x)s, 0);
         int z_typenum = PyArray_ObjectType((PyObject*)%(z)s, 0);
         int gz_typenum = PyArray_ObjectType((PyObject*)%(gz)s, 0);
+        int x_shp0_usable;
+        int x_shp1_usable;
+        int z_shp0, z_shp1;
         if ((x_typenum != z_typenum) || (x_typenum != gz_typenum))
         {
             PyErr_SetString(PyExc_ValueError, "input types must all match");
@@ -723,6 +942,233 @@ class MaxPoolGrad(PoolGrad):
             PyErr_SetString(PyExc_ValueError, "gz must be a 4d ndarray");
             %(fail)s;
         }
+        z_shp0 = PyArray_DIMS(%(z)s)[2];
+        z_shp1 = PyArray_DIMS(%(z)s)[3];
+        if (%(ignore_border)s)
+        {
+            x_shp0_usable = (z_shp0 -1) * %(st0)s + %(ds0)s;
+            x_shp1_usable = (z_shp1 -1) * %(st1)s + %(ds1)s;
+        }
+        else
+        {
+            x_shp0_usable = PyArray_DIMS(%(x)s)[2];
+            x_shp1_usable = PyArray_DIMS(%(x)s)[3];
+        }
+        if ((!%(gx)s)
+          || *PyArray_DIMS(%(gx)s)!=4
+          ||(PyArray_DIMS(%(gx)s)[0] != PyArray_DIMS(%(x)s)[0])
+          ||(PyArray_DIMS(%(gx)s)[1] != PyArray_DIMS(%(x)s)[1])
+          ||(PyArray_DIMS(%(gx)s)[2] != PyArray_DIMS(%(x)s)[2])
+          ||(PyArray_DIMS(%(gx)s)[3] != PyArray_DIMS(%(x)s)[3])
+          )
+        {
+          Py_XDECREF(%(gx)s);
+          %(gx)s =
+            (PyArrayObject*)PyArray_ZEROS(4, PyArray_DIMS(%(x)s), x_typenum,0);
+        }
+        register npy_intp zpS1 = PyArray_DIMS(%(z)s)[3];
+        register npy_intp gzpS1 =  PyArray_DIMS(%(gz)s)[3];
+        register npy_intp xpS1 =  PyArray_DIMS(%(x)s)[3];
+        register npy_intp gxpS1 =  PyArray_DIMS(%(gx)s)[3];
+
+        register npy_intp zpB1 =
+            PyArray_DIMS(%(z)s)[1] * PyArray_DIMS(%(z)s)[2] * zpS1;
+        register npy_intp gzpB1 =
+            PyArray_DIMS(%(gz)s)[1] * PyArray_DIMS(%(gz)s)[2] * gzpS1;
+        register npy_intp xpB1 =
+            PyArray_DIMS(%(x)s)[1] * PyArray_DIMS(%(x)s)[2] * xpS1;
+        register npy_intp gxpB1 =
+            PyArray_DIMS(%(gx)s)[1] * PyArray_DIMS(%(gx)s)[2] * gxpS1;
+
+        register npy_intp zpB2 = PyArray_DIMS(%(z)s)[2] * zpS1;
+        register npy_intp gzpB2 = PyArray_DIMS(%(gz)s)[2] * gzpS1;
+        register npy_intp xpB2 =  PyArray_DIMS(%(x)s)[2] * xpS1;
+        register npy_intp gxpB2 = PyArray_DIMS(%(gx)s)[2] * gxpS1;
+
+        dtype_V3 * %(x)sIn= (dtype_V3*)PyArray_DATA(%(x)s);
+        dtype_V1 * %(gx)sIn= (dtype_V1*)PyArray_DATA(%(gx)s);
+        dtype_V5 * %(z)sIn= (dtype_V5*)PyArray_DATA(%(z)s);
+        dtype_V7 * %(gz)sIn= (dtype_V7*)PyArray_DATA(%(gz)s);
+        """ % locals()
+        if self.ignore_border ==0:
+            ret += """
+                {
+                    z_shp0 = 1 + (x_shp0_usable - %(ds0)s)/%(st0)s;
+                    z_shp1 = 1 + (x_shp1_usable - %(ds1)s)/%(st1)s;
+                }
+            """ % d
+        ret += """
+            //downsample
+            #pragma omp parallel for schedule(dynamic,10) num_threads(32)
+            for(int b=0;b<PyArray_DIMS(%(x)s)[0];b++)
+            {
+              for(int k=0;k<PyArray_DIMS(%(x)s)[1];k++)
+              {
+                 register dtype_V3 * in1 = & %(x)sIn[b*xpB1+k*xpB2];
+                 register dtype_V1 * in2 = & %(gx)sIn[b*gxpB1+k*gxpB2];
+                 register dtype_V5 * in3 =  & %(z)sIn[b*zpB1 + k*zpB2];
+                 register dtype_V7 * in4 = & %(gz)sIn[b*gzpB1 + k*gzpB2];
+                 for(int i=0; i< x_shp0_usable;i++)
+                 {
+                    register dtype_V1 * __restrict__ gxp2 = & in2[i*gxpS1];
+                    #pragma simd
+                    for(int j=0; j< x_shp1_usable;j++)
+                        gxp2[j]=0;
+                 }
+        """ % locals()
+        ret +=   """
+            for(int zi=0; zi< z_shp0; zi++)
+            {
+                register dtype_V5 * __restrict__ zp = & in3[zi *zpS1];
+                register dtype_V7 * __restrict__ gzp =  & in4[zi*gzpS1];
+                for(int zj =0;zj < z_shp1;zj++)
+                {
+                    for(int di =0; di< %(ds0)s;di++)
+                    {
+                        int i = zi* %(st0)s + di;
+                        register dtype_V3 * __restrict__ xp = & in1[i *xpS1];
+                        register dtype_V1 * __restrict__ gxp = & in2[i*gxpS1];
+                        for(int dj=0; dj <%(ds1)s;dj++)
+                        {
+                            int j =zj * %(st1)s + dj;
+                            dtype_V1 tmp = gxp[j];
+                            gxp[j] = (xp[j] == zp[zj]) * gzp[zj] +
+                                (xp[j] != zp[zj]) * tmp;
+                        }
+                    }
+                }
+            }
+        """ % locals()
+        if self.ignore_border ==0:
+            ret += """
+                {
+                    int rowStart = z_shp0;
+                    int colStart = z_shp1;
+                    int rowEnd = x_shp0_usable / %(st0)s +
+                        ((x_shp0_usable %% %(st0)s) !=0);
+                    int colEnd = x_shp1_usable / %(st1)s +
+                        ((x_shp1_usable %% %(st1)s) !=0);
+                    if(rowStart < rowEnd)
+                    {
+                        for(int zi=rowStart; zi< rowEnd; zi++)
+                        {
+                            register dtype_V5 * __restrict__ zp=&in3[zi *zpS1];
+                            register dtype_V7 * __restrict__ gzp=&in4[zi*gzpS1];
+                            for(int zj =0;zj < z_shp1;zj++)
+                            {
+                                for(int di =0; di< %(ds0)s;di++)
+                                {
+                                    int i = zi* %(st0)s + di;
+                                    if(i>=  x_shp0_usable)
+                                        continue;
+                                    register dtype_V3 * __restrict__ xp =
+                                        & in1[i *xpS1];
+                                    register dtype_V1 * __restrict__ gxp =
+                                        & in2[i*gxpS1];
+                                    for(int dj=0; dj <%(ds1)s;dj++)
+                                    {
+                                        int j =zj * %(st1)s + dj;
+                                        dtype_V1 tmp = gxp[j];
+                                        gxp[j] = (xp[j] == zp[zj]) * gzp[zj] +
+                                            (xp[j] != zp[zj]) * tmp;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if(colStart < colEnd)
+                    {
+                        for(int zi=0; zi< z_shp0; zi++)
+                        {
+                            register dtype_V5 * __restrict__ zp=&in3[zi *zpS1];
+                            register dtype_V7 * __restrict__ gzp=&in4[zi*gzpS1];
+                            for(int zj =colStart;zj < colEnd;zj++)
+                            {
+                                for(int di =0; di< %(ds0)s;di++)
+                                {
+                                    int i = zi* %(st0)s + di;
+                                    register dtype_V3 * __restrict__ xp =
+                                        & in1[i *xpS1];
+                                    register dtype_V1 * __restrict__ gxp =
+                                        & in2[i*gxpS1];
+                                    for(int dj=0; dj <%(ds1)s;dj++)
+                                    {
+                                        int j =zj * %(st1)s + dj;
+                                        if(j >= x_shp1_usable)
+                                            continue;
+                                        dtype_V1 tmp = gxp[j];
+                                        gxp[j] = (xp[j] == zp[zj]) * gzp[zj] +
+                                            (xp[j] != zp[zj]) * tmp;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    for(int zi=rowStart; zi< rowEnd; zi++)
+                    {
+                        register dtype_V5 * __restrict__ zp = & in3[zi *zpS1];
+                        register dtype_V7 * __restrict__ gzp =  & in4[zi*gzpS1];
+                        for(int zj =colStart;zj < colEnd;zj++)
+                        {
+                            for(int di =0; di< %(ds0)s;di++)
+                            {
+                                int i = zi* %(st0)s + di;
+                                if(i>=  x_shp0_usable)
+                                    continue;
+                                register dtype_V3 * __restrict__ xp =
+                                    & in1[i *xpS1];
+                                register dtype_V1 * __restrict__ gxp =
+                                    & in2[i*gxpS1];
+                                for(int dj=0; dj <%(ds1)s;dj++)
+                                {
+                                    int j =zj * %(st1)s + dj;
+                                    if(j >= x_shp1_usable)
+                                        continue;
+                                    dtype_V1 tmp = gxp[j];
+                                    gxp[j] = (xp[j] == zp[zj]) * gzp[zj] +
+                                        (xp[j] != zp[zj])*tmp;
+                                }
+                            }
+                        }
+                    }
+                }
+            """ %locals()
+        ret +="""
+                }//k
+              }//b
+            }
+         """
+        return ret
+
+
+        theano_07_ccode = """
+        {
+        // sanity checks
+        int x_typenum = PyArray_ObjectType((PyObject*)%(x)s, 0);
+        int z_typenum = PyArray_ObjectType((PyObject*)%(z)s, 0);
+        int gz_typenum = PyArray_ObjectType((PyObject*)%(gz)s, 0);
+
+        if ((x_typenum != z_typenum) || (x_typenum != gz_typenum))
+        {
+            PyErr_SetString(PyExc_ValueError, "input types must all match");
+            %(fail)s;
+        }
+        if(PyArray_NDIM(%(x)s)!=4)
+        {
+            PyErr_SetString(PyExc_ValueError, "x must be a 4d ndarray");
+            %(fail)s;
+        }
+        if(PyArray_NDIM(%(z)s)!=4)
+        {
+            PyErr_SetString(PyExc_ValueError, "z must be a 4d ndarray");
+            %(fail)s;
+        }
+        if(PyArray_NDIM(%(gz)s)!=4)
+        {
+            PyErr_SetString(PyExc_ValueError, "gz must be a 4d ndarray");
+            %(fail)s;
+        }
+
         int z_r, z_c;
         z_r = PyArray_DIMS(%(z)s)[2];
         z_c = PyArray_DIMS(%(z)s)[3];
@@ -793,6 +1239,7 @@ class MaxPoolGrad(PoolGrad):
                 }
               }
             }
+          }
         }
         """ % locals()
 
@@ -888,7 +1335,85 @@ class AveragePoolGrad(PoolGrad):
 class DownsampleFactorMaxGradGrad(Op):
     __props__ = ('ds', 'ignore_border', 'st', 'padding', 'mode')
 
-    def __init__(self, ds, ignore_border, st=None, padding=(0, 0), mode='max'):
+    @staticmethod
+    def out_shape(imgshape, ds, ignore_border=False, st=None, padding=(0, 0)):
+        """
+        Return the shape of the output from this op, for input of given
+        shape and flags.
+
+        Parameters
+        ----------
+        imgshape : tuple, list, or similar of integer or scalar Theano variable
+            The shape of a tensor of images. The last two elements
+            are interpreted as the number of rows, and the number of cols.
+        ds : list or tuple of two ints
+            Downsample factor over rows and columns this parameter indicates the
+            size of the pooling region.
+        st: list or tuple of two ints
+            The stride size. This is the distance between the pooling regions.
+            If it's set to None, in which case it equlas ds.
+        ignore_border: bool
+            If ds doesn't divide imgshape, do we include an
+            extra row/col of partial downsampling (False) or ignore it (True).
+        padding : tuple of two ints
+            (pad_h, pad_w), pad zeros to extend beyond four borders
+            of the images, pad_h is the size of the top and bottom margins,
+            and pad_w is the size of the left and right margins.
+
+        Returns
+        -------
+        list
+            The shape of the output from this op, for input of given shape.
+            This will have the same length as imgshape, but with last two
+            elements reduced as per the downsampling & ignore_border flags.
+
+        """
+        if len(imgshape) < 2:
+            raise TypeError('imgshape must have at least two elements '
+                            '(rows, cols)')
+
+        if st is None:
+            st = ds
+        r, c = imgshape[-2:]
+        r += padding[0] * 2
+        c += padding[1] * 2
+
+        if ignore_border:
+            out_r = (r - ds[0]) // st[0] + 1
+            out_c = (c - ds[1]) // st[1] + 1
+            if isinstance(r, theano.Variable):
+                nr = tensor.maximum(out_r, 0)
+            else:
+                nr = numpy.maximum(out_r, 0)
+            if isinstance(c, theano.Variable):
+                nc = tensor.maximum(out_c, 0)
+            else:
+                nc = numpy.maximum(out_c, 0)
+        else:
+            if isinstance(r, theano.Variable):
+                nr = tensor.switch(tensor.ge(st[0], ds[0]),
+                                   (r - 1) // st[0] + 1,
+                                   tensor.maximum(0, (r - 1 - ds[0])
+                                                  // st[0] + 1) + 1)
+            elif st[0] >= ds[0]:
+                nr = (r - 1) // st[0] + 1
+            else:
+                nr = max(0, (r - 1 - ds[0]) // st[0] + 1) + 1
+
+            if isinstance(c, theano.Variable):
+                nc = tensor.switch(tensor.ge(st[1], ds[1]),
+                                   (c - 1) // st[1] + 1,
+                                   tensor.maximum(0, (c - 1 - ds[1])
+                                                  // st[1] + 1) + 1)
+            elif st[1] >= ds[1]:
+                nc = (c - 1) // st[1] + 1
+            else:
+                nc = max(0, (c - 1 - ds[1]) // st[1] + 1) + 1
+
+        rval = list(imgshape[:-2]) + [nr, nc]
+        return rval
+
+    def __init__(self, ds, ignore_border, st=None, padding=(0,0), mode='max'):
         self.ds = tuple(ds)
         if not all([isinstance(d, int) for d in ds]):
             raise ValueError(
@@ -927,6 +1452,8 @@ class DownsampleFactorMaxGradGrad(Op):
         if len(x.shape) != 4:
             raise NotImplementedError(
                 'DownsampleFactorMaxGradGrad requires 4D input for now')
+        maxout.shape = self.out_shape(x.shape, self.ds, self.ignore_border,
+                                 self.st, self.padding)
         if (z[0] is None) or (z[0].shape != maxout.shape):
             z[0] = numpy.zeros(maxout.shape, dtype=x.dtype)
         ggz = z[0]  # grad wrt maxout_grad has the same shape as maxout
@@ -981,75 +1508,96 @@ class DownsampleFactorMaxGradGrad(Op):
         st0, st1 = self.st
         pd0, pd1 = self.padding
         return """
-        int z_typenum = PyArray_ObjectType((PyObject*)%(maxout)s, 0);
-        int z_r, z_c;
-        z_r = PyArray_DIMS(%(maxout)s)[2];
-        z_c = PyArray_DIMS(%(maxout)s)[3];
-        int r, c; // shape of the padded_input
-        r = PyArray_DIMS(%(x)s)[2];
-        c = PyArray_DIMS(%(x)s)[3];
-        r += %(pd0)s * 2;
-        c += %(pd1)s * 2;
-        // allocating memory for output
-        if ((!%(z)s)
-          || !PyArray_ISCONTIGUOUS(%(z)s)
-          || *PyArray_DIMS(%(z)s)!=4
-          ||(PyArray_DIMS(%(z)s)[0] != PyArray_DIMS(%(maxout)s)[0])
-          ||(PyArray_DIMS(%(z)s)[1] != PyArray_DIMS(%(maxout)s)[1])
-          ||(PyArray_DIMS(%(z)s)[2] != PyArray_DIMS(%(maxout)s)[2])
-          ||(PyArray_DIMS(%(z)s)[3] != PyArray_DIMS(%(maxout)s)[3])
-          )
         {
-          Py_XDECREF(%(z)s);
-          %(z)s = (PyArrayObject*) PyArray_ZEROS(4, PyArray_DIMS(%(maxout)s), z_typenum,0);
-        }
-        else {
-          PyArray_FILLWBYTE(%(z)s, 0);
-        }
-        dtype_%(maxout)s maximum; // temp var for maximum value in a region
-        int r_st, r_end, c_st, c_end; // used to index into the input img x
-        for(int b=0; b<PyArray_DIMS(%(x)s)[0]; b++){
-              for(int k=0; k<PyArray_DIMS(%(x)s)[1]; k++){
-                for(int i=0; i< z_r; i++){
-                  r_st = i * %(st0)s;
-                  r_end = r_st + %(ds0)s;
-                  // skip the padding
-                  r_st = r_st < %(pd0)s ? %(pd0)s : r_st;
-                  r_end = r_end > (r - %(pd0)s) ? r - %(pd0)s : r_end;
-                  // from padded_img space to img space
-                  r_st -= %(pd0)s;
-                  r_end -= %(pd0)s;
-                  for(int j=0; j<z_c; j++){
-                    c_st = j * %(st1)s;
-                    c_end = c_st + %(ds1)s;
-                    // skip the padding
-                    c_st = c_st < %(pd1)s ? %(pd1)s : c_st;
-                    c_end = c_end > (c - %(pd1)s) ? c - %(pd1)s : c_end;
-                    // from padding_img space into img space
-                    c_st -= %(pd1)s;
-                    c_end -= %(pd1)s;
-                    // the maximum value
-                    maximum = ((dtype_%(maxout)s*)(PyArray_GETPTR4(%(maxout)s,b,k,i,j)))[0];
-                    // z at this position
-                    dtype_%(z)s * z = ((dtype_%(z)s*)(PyArray_GETPTR4(%(z)s, b, k, i, j)));
-                    // go through the pooled region in the unpadded input
-                    for(int m=r_st; m<r_end; m++)
-                    {
-                      for(int n=c_st; n<c_end; n++)
-                      {
-                        dtype_%(x)s a = ((dtype_%(x)s*)(PyArray_GETPTR4(%(x)s,b,k,m,n)))[0];
-                        dtype_%(ggx)s * ggx = (
-                          (dtype_%(ggx)s*)(PyArray_GETPTR4(%(ggx)s, b, k, m, n)));
-                        if (a == maximum){
-                          z[0] += ggx[0];
+            int z_typenum = PyArray_ObjectType((PyObject*)%(maxout)s, 0);
+            int z_r, z_c;
+            z_r = PyArray_DIMS(%(maxout)s)[2];
+            z_c = PyArray_DIMS(%(maxout)s)[3];
+            int r, c; // shape of the padded_input
+            r = PyArray_DIMS(%(x)s)[2];
+            c = PyArray_DIMS(%(x)s)[3];
+            r += %(pd0)s * 2;
+            c += %(pd1)s * 2;
+            // allocating memory for output
+            if ((!%(z)s)
+            || !PyArray_ISCONTIGUOUS(%(z)s)
+            || *PyArray_DIMS(%(z)s)!=4
+            ||(PyArray_DIMS(%(z)s)[0] != PyArray_DIMS(%(maxout)s)[0])
+            ||(PyArray_DIMS(%(z)s)[1] != PyArray_DIMS(%(maxout)s)[1])
+            ||(PyArray_DIMS(%(z)s)[2] != PyArray_DIMS(%(maxout)s)[2])
+            ||(PyArray_DIMS(%(z)s)[3] != PyArray_DIMS(%(maxout)s)[3])
+            )
+            {
+                Py_XDECREF(%(z)s);
+                %(z)s = (PyArrayObject*) PyArray_ZEROS(4,
+                    PyArray_DIMS(%(maxout)s), z_typenum,0);
+            }
+            else {
+                PyArray_FILLWBYTE(%(z)s, 0);
+            }
+            dtype_%(maxout)s maximum; //temp var for maximum value in a region
+            int r_st, r_end, c_st, c_end;
+            for(int b=0; b<PyArray_DIMS(%(x)s)[0]; b++){
+                for(int k=0; k<PyArray_DIMS(%(x)s)[1]; k++){
+                    for(int i=0; i< z_r; i++){
+                        r_st = i * %(st0)s;
+                        r_end = r_st + %(ds0)s;
+                        // skip the padding
+                        r_st = r_st < %(pd0)s ? %(pd0)s : r_st;
+                        r_end = r_end > (r - %(pd0)s) ? r - %(pd0)s : r_end;
+                        // from padded_img space to img space
+                        r_st -= %(pd0)s;
+                        r_end -= %(pd0)s;
+                        for(int j=0; j<z_c; j++){
+                            c_st = j * %(st1)s;
+                            c_end = c_st + %(ds1)s;
+                            // skip the padding
+                            c_st = c_st < %(pd1)s ? %(pd1)s : c_st;
+                            c_end = c_end > (c - %(pd1)s) ? c - %(pd1)s : c_end;
+                            // from padding_img space into img space
+                            c_st -= %(pd1)s;
+                            c_end -= %(pd1)s;
+                            // the maximum value
+                            maximum = ((dtype_%(maxout)s*)(PyArray_GETPTR4(
+                                    %(maxout)s,b,k,i,j)))[0];
+                            // z at this position
+                            dtype_%(z)s * z = ((dtype_%(z)s*)(PyArray_GETPTR4(
+                                    %(z)s, b, k, i, j)));
+                            //go through the pooled region in the unpadded input
+                            for(int m=r_st; m<r_end; m++)
+                            {
+                                for(int n=c_st; n<c_end; n++)
+                                {
+                                    dtype_%(x)s a = ((dtype_%(x)s*)(
+                                        PyArray_GETPTR4(%(x)s,b,k,m,n)))[0];
+                                    dtype_%(ggx)s * ggx = ((dtype_%(ggx)s*)(
+                                        PyArray_GETPTR4(%(ggx)s, b, k, m, n)));
+                                    if (a == maximum){
+                                        z[0] += ggx[0];
+                                    }
+                                }
+                            }
                         }
-                      }
                     }
-                  }
                 }
-              }
-         }
-        """ % locals()
+            }
+        }
+        """%locals()
 
     def c_code_cache_version(self):
-        return (0, 1)
+        return (0,1)
+
+@register_canonicalize('fast_compile')
+@gof.local_optimizer([MaxPoolGrad])
+def local_average_pool_grad(node):
+    # To assure backward compatibility with
+    # DownsampleFactorMaxGrad
+    if (not isinstance(node.op, MaxPoolGrad) or node.op.mode not in
+            ['sum','average_exc_pad', 'average_inc_pad']):
+        return False
+    return [AveragePoolGrad(ds=node.op.ds,
+                            ignore_border=node.op.ignore_border,
+                            st=node.op.st,
+                            padding=node.op.padding,
+                            mode=node.op.mode)(node.inputs[0],
+                                               node.inputs[2])]

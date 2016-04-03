@@ -503,6 +503,7 @@ class Softmax(gof.Op):
         """
 
         begin_row_loop = """
+        #pragma omp parallel for if(Nx[0]>2)
         for (size_t i = 0; i < Nx[0]; ++i)
         {
             size_t j;
