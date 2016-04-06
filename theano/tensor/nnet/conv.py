@@ -2072,7 +2072,7 @@ if(Space ==0)
 %(type)s* TmpData =(%(type)s*)calloc(max_threads*%(self_bsize)s*%(self_nkern)s*
         %(self_outshp0)s*%(self_outshp1)s, sizeof(%(type)s));
 
-#pragma omp parallel for simd
+#pragma omp parallel for
 for(int c=0;c< %(self_imshp0)s; c++)
 {
     %(type)s * data_im=&(((%(type)s*)imBase)[c*%(self_bsize)s*%(self_imshp1)s*
@@ -2121,7 +2121,7 @@ for(int c=0;c< %(self_imshp0)s; c++)
         (float*)TmpOut,N);
 }//b
 
-#pragma omp parallel for simd
+#pragma omp parallel for
 for(int j=0;j<%(self_bsize)s*%(self_nkern)s*%(self_outshp0)s*%(self_outshp1)s;
     j++)
 {
@@ -2312,7 +2312,7 @@ if (!PyArray_ISCONTIGUOUS(%(z)s))
    #define PyArray_GRADI_GETPTR2(base,stride, i, j) \
            ((void *)(base + (i)*stride[0] + (j)*stride[1]))
    %(type)s* data=(%(type)s*)imBase;
-   #pragma omp parallel for simd
+   #pragma omp parallel for
    for(int b=0;b< %(self_bsize)s;b++)
    {
        register int tid = omp_get_thread_num() %% max_threads;
