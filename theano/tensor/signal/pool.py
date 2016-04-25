@@ -108,7 +108,6 @@ def pool_2d(input, ds, ignore_border=None, st=None, padding=(0, 0),
     op = Pool(ds, ignore_border, st=st, padding=padding,
               mode=mode)
     output = op(input_4D)
-
     # restore to original shape
     outshp = tensor.join(0, input.shape[:-2], output.shape[-2:])
     return tensor.reshape(output, outshp, ndim=input.ndim)
@@ -355,7 +354,6 @@ class Pool(Op):
         ds0, ds1 = self.ds
         st0, st1 = self.st
         pd0, pd1 = self.padding
-
         d={}
         d["x"]=x
         d["ds1"]=ds1
@@ -388,7 +386,7 @@ class Pool(Op):
         if (%(ignore_border)s)
         {
             z_shp0 = 1 +  (x_shp0_usable - %(ds0)s) / %(st0)s;
-            z_shp1 = 1 + (x_shp0_usable - %(ds1)s) / %(st1)s;
+            z_shp1 = 1 + (x_shp1_usable - %(ds1)s) / %(st1)s;
         }
         else
         {
@@ -422,7 +420,7 @@ class Pool(Op):
         if self.ignore_border == False:
             ret += """
                     z_shp0 = 1 +  (x_shp0_usable - %(ds0)s) / %(st0)s;
-                    z_shp1 = 1 + (x_shp0_usable - %(ds1)s) / %(st1)s;
+                    z_shp1 = 1 + (x_shp1_usable - %(ds1)s) / %(st1)s;
                     """ % d
         ret += """
             //DownSample
@@ -444,17 +442,17 @@ class Pool(Op):
                         int i=zi * %(st0)s;
                         int j = zj * %(st1)s;
                         const dtype_%(x)s * __restrict__ inRow=&in[i*inDim[3]];
-                        #pragma simd
+                        #pragma ivdep 
                         for(int m =0; m<%(ds1)s;m++)
                             buf[m]=inRow[m+j]>inRow[inDim[3] + m+j]?
                                 inRow[m+j]:inRow[inDim[3]+ m+j];
                 """ % locals()
-        ret += my_dup("\n#pragma simd\n"
+        ret += my_dup("\n#pragma ivdep\n"
                       "for(int m =0; m<%(ds1)s;m++)\n"
                       "buf[m]=buf[m]>inRow[%(index)s * inDim[3] + m+j]?"
                       "buf[m]:inRow[%(index)s * inDim[3]+ m+j];",2,ds0)
         ret += """
-                    #pragma simd
+                    #pragma ivdep
                     for(int m=1; m<%(ds1)s;m++)
                     {
                         buf[0] = buf[0] > buf[m]?buf[0]:buf[m];
@@ -944,7 +942,7 @@ class MaxPoolGrad(PoolGrad):
         }
         z_shp0 = PyArray_DIMS(%(z)s)[2];
         z_shp1 = PyArray_DIMS(%(z)s)[3];
-        if (%(ignore_border)s)
+        if(%(ignore_border)s)
         {
             x_shp0_usable = (z_shp0 -1) * %(st0)s + %(ds0)s;
             x_shp1_usable = (z_shp1 -1) * %(st1)s + %(ds1)s;
