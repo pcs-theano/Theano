@@ -1,0 +1,14 @@
+[cuda]
+root = /usr/local/cuda
+
+[global]
+device = cpu
+floatX = float32
+cxx = icpc
+mode = FAST_RUN
+openmp = True
+openmp_elemwise_minsize = 10
+[gcc]
+cxxflags = -openmp -march=native -O3 -vec-report3 -fno-alias -opt-prefetch=2 -fp-trap=none
+[blas]
+ldflags = -lmkl_rt

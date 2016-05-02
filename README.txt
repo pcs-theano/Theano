@@ -21,6 +21,17 @@ Documentation is built into html/
 The PDF of the documentation is html/theano.pdf
 
 
+#Intel-Theano
+Follow the installation instruction listed above to install Intel-theano
+from current repo.
+
+For gcc/g++ and OpenBlas, replace ~/.theanorc with theanorc_gcc.
+For icc/icpc and MKL, replace ~/.theanorc with theanorc_icc.
+
+Documents for Intel-Theano:
+    https://github.com/pcs-theano/theano-docs.git
+
+
 DIRECTORY LAYOUT
 
 Theano (current directory) is the distribution directory.
