@@ -35,7 +35,7 @@ class BaseCorrMM(gof.OpenMPOp):
 
     def __init__(self, border_mode="valid", subsample=(1, 1), openmp=None):
         super(BaseCorrMM, self).__init__(openmp=openmp)
-        if isinstance(border_mode, int):
+        if isinstance(border_mode, integer_types):
             if border_mode < 0:
                 raise ValueError(
                     'invalid border_mode {}, which must be a '
@@ -58,7 +58,7 @@ class BaseCorrMM(gof.OpenMPOp):
         if len(subsample) != 2:
             raise ValueError("subsample must have two elements")
         self.subsample = tuple(subsample)
-        self.cores=cpu_count()
+        self.cores = cpu_count()
 
     @property
     def pad(self):
@@ -82,7 +82,6 @@ class BaseCorrMM(gof.OpenMPOp):
         compile_args = ldflags(libs=False, flags=True)
         compile_args += super(BaseCorrMM, self).c_compile_args()
         return compile_args
-            
 
     def c_lib_dirs(self):
         return ldflags(libs=False, libs_dir=True)
@@ -435,8 +434,7 @@ class CorrMM_gradWeights(BaseCorrMM):
     """
 
     def __init__(self, border_mode="valid", subsample=(1, 1), openmp=None):
-        super(CorrMM_gradWeights, self).__init__(border_mode, subsample,
-            openmp=openmp)
+        super(CorrMM_gradWeights, self).__init__(border_mode, subsample, openmp=openmp)
 
     def make_node(self, img, topgrad, shape=None):
         img = as_tensor_variable(img)
@@ -533,8 +531,7 @@ class CorrMM_gradInputs(BaseCorrMM):
     """
 
     def __init__(self, border_mode="valid", subsample=(1, 1), openmp=None):
-        super(CorrMM_gradInputs, self).__init__(border_mode, subsample, 
-            openmp=openmp)
+        super(CorrMM_gradInputs, self).__init__(border_mode, subsample, openmp=openmp)
 
     def make_node(self, kern, topgrad, shape=None):
         kern = as_tensor_variable(kern)
