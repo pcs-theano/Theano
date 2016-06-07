@@ -12,8 +12,6 @@ from theano.tensor.nnet.abstract_conv import get_conv_output_shape
 from theano.tensor.blas_headers import blas_header_text
 from theano.tensor.blas import ldflags, blas_header_version
 
-from multiprocessing import cpu_count
-
 _logger = logging.getLogger(__name__)
 
 
@@ -58,7 +56,6 @@ class BaseCorrMM(gof.OpenMPOp):
         if len(subsample) != 2:
             raise ValueError("subsample must have two elements")
         self.subsample = tuple(subsample)
-        self.cores = cpu_count()
 
     @property
     def pad(self):
@@ -96,7 +93,7 @@ class BaseCorrMM(gof.OpenMPOp):
 
     def c_code_cache_version(self):
         # raise this whenever modifying any of the support_code_files
-        return (1, blas_header_version())
+        return (1, self.openmp, blas_header_version())
 
     def c_support_code_apply(self, node, nodename):
         # REMEMBER TO RAISE c_code_cache_version when changing any of
@@ -117,13 +114,13 @@ class BaseCorrMM(gof.OpenMPOp):
             sub['n_bytes'] = 8
             sub['c_float_type'] = 'double'
         if self.openmp:
-            sub['cores'] = self.cores
-            sub['omp_flags'] = '#pragma omp parallel for'
+            sub['omp_flags'] = '#pragma omp parallel for schedule(static)'
+            sub['omp_max_threads'] = 'omp_get_max_threads()'
             sub['omp_set_threads'] = 'omp_set_num_threads'
             sub['omp_get_threads'] = 'omp_get_thread_num()'
         else:
-            sub['cores'] = 1
             sub['omp_flags'] = ''
+            sub['omp_max_threads'] = 1
             sub['omp_set_threads'] = ''
             sub['omp_get_threads'] = 0
 
@@ -330,7 +327,7 @@ class BaseCorrMM(gof.OpenMPOp):
         else {
           typenum = PyArray_TYPE(bottom);
         }
-        %(out)s = (PyArrayObject*)PyArray_ZEROS(4,
+        %(out)s = (PyArrayObject*)PyArray_EMPTY(4,
                                           out_dim,
                                           typenum,
                                           0);
@@ -377,8 +374,8 @@ class CorrMM(BaseCorrMM):
         Set to `(1, 1)` to disable subsampling.
 
     """
-    def __init__(self, border_mode="valid", subsample=(1, 1), openmp=None):
-        super(CorrMM, self).__init__(border_mode, subsample, openmp=openmp)
+    def __init__(self, border_mode="valid", subsample=(1, 1)):
+        super(CorrMM, self).__init__(border_mode, subsample)
 
     def make_node(self, img, kern):
         img = as_tensor_variable(img)
@@ -433,8 +430,8 @@ class CorrMM_gradWeights(BaseCorrMM):
 
     """
 
-    def __init__(self, border_mode="valid", subsample=(1, 1), openmp=None):
-        super(CorrMM_gradWeights, self).__init__(border_mode, subsample, openmp=openmp)
+    def __init__(self, border_mode="valid", subsample=(1, 1)):
+        super(CorrMM_gradWeights, self).__init__(border_mode, subsample)
 
     def make_node(self, img, topgrad, shape=None):
         img = as_tensor_variable(img)
@@ -530,8 +527,8 @@ class CorrMM_gradInputs(BaseCorrMM):
 
     """
 
-    def __init__(self, border_mode="valid", subsample=(1, 1), openmp=None):
-        super(CorrMM_gradInputs, self).__init__(border_mode, subsample, openmp=openmp)
+    def __init__(self, border_mode="valid", subsample=(1, 1)):
+        super(CorrMM_gradInputs, self).__init__(border_mode, subsample)
 
     def make_node(self, kern, topgrad, shape=None):
         kern = as_tensor_variable(kern)
