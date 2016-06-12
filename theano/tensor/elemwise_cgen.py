@@ -407,7 +407,7 @@ def make_reordered_loop(init_loop_orders, olv_index, dtypes, inner_task, sub,
         if i == 0:
             if openmp:
                 openmp_elemwise_minsize = theano.config.openmp_elemwise_minsize
-                forloop += """#pragma omp parallel for collapse(%d)\n"""%(nnested)
+                forloop += """#pragma omp parallel for collapse(%d)\n""" % (nnested)
         forloop += "for(int %(iterv)s = 0; %(iterv)s<%(total)s; %(iterv)s++)" % locals()
 
         loop = """
@@ -463,7 +463,7 @@ def make_reordered_loop(init_loop_orders, olv_index, dtypes, inner_task, sub,
 ################
 
 
-def make_loop_careduce(loop_orders, dtypes, loop_tasks, sub):
+def make_loop_careduce(loop_orders, dtypes, loop_tasks, sub, Flag=0):
     """
     Make a nested loop over several arrays and associate specific code
     to each level of nesting.
@@ -489,7 +489,7 @@ def make_loop_careduce(loop_orders, dtypes, loop_tasks, sub):
 
     """
 
-    def loop_over(preloop, code, indices, i):
+    def loop_over(preloop, code, indices, i, Flag):
         iterv = 'ITER_%i' % i
         update = ""
         suitable_n = "1"
@@ -498,9 +498,21 @@ def make_loop_careduce(loop_orders, dtypes, loop_tasks, sub):
             update += "%(var)s_iter += %(var)s_jump%(index)s_%(i)s;\n" % locals()
             if index != 'x':
                 suitable_n = "%(var)s_n%(index)s" % locals()
+        if Flag == 1:
+            ccode = """
+                     %(preloop)s
+                    """ % locals()
+            if i == 0:
+                ccode += """\n#pragma omp parallel for"""
+            ccode += """
+                    for (int %(iterv)s = 0; %(iterv)s<%(suitable_n)s; %(iterv)s++) {//SMG
+                        %(code)s
+                    }
+                    """ % locals()
+            return ccode
         return """
         %(preloop)s
-        for (int %(iterv)s = %(suitable_n)s; %(iterv)s; %(iterv)s--) {
+        for (int %(iterv)s = 0;  %(iterv)s<%(suitable_n)s; %(iterv)s++) {
             %(code)s
             %(update)s
         }
@@ -522,7 +534,7 @@ def make_loop_careduce(loop_orders, dtypes, loop_tasks, sub):
     else:
         s = ""
         for i, (pre_task, task), indices in reversed(list(zip(xrange(len(loop_tasks) - 1), loop_tasks, list(zip(*loop_orders))))):
-            s = loop_over(preloops.get(i, "") + pre_task, s + task, indices, i)
+            s = loop_over(preloops.get(i, "") + pre_task, s + task, indices, i, Flag)
 
     s += loop_tasks[-1]
     return "{%s}" % s
