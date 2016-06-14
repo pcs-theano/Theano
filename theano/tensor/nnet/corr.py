@@ -374,8 +374,6 @@ class CorrMM(BaseCorrMM):
         Set to `(1, 1)` to disable subsampling.
 
     """
-    def __init__(self, border_mode="valid", subsample=(1, 1)):
-        super(CorrMM, self).__init__(border_mode, subsample)
 
     def make_node(self, img, kern):
         img = as_tensor_variable(img)
@@ -429,9 +427,6 @@ class CorrMM_gradWeights(BaseCorrMM):
     use it as needed.
 
     """
-
-    def __init__(self, border_mode="valid", subsample=(1, 1)):
-        super(CorrMM_gradWeights, self).__init__(border_mode, subsample)
 
     def make_node(self, img, topgrad, shape=None):
         img = as_tensor_variable(img)
@@ -526,9 +521,6 @@ class CorrMM_gradInputs(BaseCorrMM):
     use it as needed.
 
     """
-
-    def __init__(self, border_mode="valid", subsample=(1, 1)):
-        super(CorrMM_gradInputs, self).__init__(border_mode, subsample)
 
     def make_node(self, kern, topgrad, shape=None):
         kern = as_tensor_variable(kern)

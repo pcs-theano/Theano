@@ -172,17 +172,24 @@ PyArrayObject* corrMM(PyArrayObject* bottom,
 
     // Create temporary columns
     const int max_threads = %(omp_max_threads)s < batchSize ? %(omp_max_threads)s : batchSize;
-
     npy_intp col_dim[3];
     col_dim[0] = (npy_intp)max_threads;
     col_dim[1] = (npy_intp)(nChannels * kW * kH);
     col_dim[2] = (npy_intp)(topHeight * topWidth);
-    PyArrayObject* col = (PyArrayObject*)PyArray_ZEROS(3,
-		                                          col_dim,
-                                        PyArray_TYPE(top),
-					                                   0);
-    if (NULL == col)
-    {
+
+    PyArrayObject* col;
+    if (max_threads > 1) {
+        col = (PyArrayObject*)PyArray_ZEROS(3,
+                                      col_dim,
+                             PyArray_TYPE(top),
+                                            0);
+    } else {
+        col = (PyArrayObject*)PyArray_EMPTY(3,
+                                      col_dim,
+                             PyArray_TYPE(top),
+                                            0);
+    }
+    if (NULL == col) {
         PyErr_Format(PyExc_RuntimeError,
                 "CorrMM failed to allocate working memory of"
                 " %%ld x %%ld x %%ld\n",
