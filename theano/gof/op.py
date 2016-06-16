@@ -1167,7 +1167,10 @@ class OpenMPOp(Op):
     def c_compile_args(self):
         self.update_self_openmp()
         if self.openmp:
-            return ['-fopenmp']
+            if 'icpc' in theano.config.cxx:
+                return ['-qopenmp']
+            else:
+                return ['-fopenmp']
         return []
 
     def c_headers(self):
@@ -1192,7 +1195,7 @@ int main( int argc, const char* argv[] )
         default_openmp = GCC_compiler.try_compile_tmp(
             src_code=code,
             tmp_prefix='test_omp_',
-            flags=['-fopenmp'],
+            flags=['-qopenmp'] if 'icpc' in theano.config.cxx else ['-fopenmp'],
             try_run=False)
         return default_openmp
 
