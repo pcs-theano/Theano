@@ -171,24 +171,20 @@ PyArrayObject* corrMM(PyArrayObject* bottom,
     }
 
     // Create temporary columns
-    const int max_threads = %(omp_max_threads)s < batchSize ? %(omp_max_threads)s : batchSize;
+    int max_threads = %(omp_max_threads)s;
+    if (batchSize < max_threads) {
+        max_threads = batchSize;
+    }
     npy_intp col_dim[3];
     col_dim[0] = (npy_intp)max_threads;
     col_dim[1] = (npy_intp)(nChannels * kW * kH);
     col_dim[2] = (npy_intp)(topHeight * topWidth);
 
-    PyArrayObject* col;
-    if (max_threads > 1) {
-        col = (PyArrayObject*)PyArray_ZEROS(3,
-                                      col_dim,
-                             PyArray_TYPE(top),
-                                            0);
-    } else {
-        col = (PyArrayObject*)PyArray_EMPTY(3,
-                                      col_dim,
-                             PyArray_TYPE(top),
-                                            0);
-    }
+    //Change to PyArray_ZEROS which is faster than PyArray_EMPTY.
+    PyArrayObject* col = (PyArrayObject*)PyArray_ZEROS(3,
+            col_dim,
+            PyArray_TYPE(top),
+            0);
     if (NULL == col) {
         PyErr_Format(PyExc_RuntimeError,
                 "CorrMM failed to allocate working memory of"
@@ -210,15 +206,18 @@ PyArrayObject* corrMM(PyArrayObject* bottom,
     char Trans = 'T';
     PyArrayObject *output;
 
-    %(omp_set_threads)s(max_threads);
+    %(set_omp_threads)s(max_threads);
     
     if (direction == 0) {  // forward pass
         output = top;
         // valid correlation: im2col, then gemm
         // Iterate over batch
+        int blas_threads_saved = %(get_blas_threads)s;
+        // Always forcing gemm to one thread when OpenMP is enalbed for best and stable performance.
+        %(set_blas_threads)s(1);
         %(omp_flags)s
         for (int n = 0; n < batchSize; ++n) {
-        	int tid = %(omp_get_threads)s;
+            int tid = %(get_omp_threads)s;
             // First, im2col
             im2col((%(float_type)s*)PyArray_DATA(bottom) + n * bottom_stride, nChannels, bottomHeight,
                     bottomWidth, kH, kW, padH, padW, dH, dW,
@@ -232,6 +231,8 @@ PyArrayObject* corrMM(PyArrayObject* bottom,
                    &zero,
                    (%(float_type)s*)PyArray_DATA(top) + n * top_stride, &N_);
         }
+        // Restore to previous blas threads
+        %(set_blas_threads)s(blas_threads_saved);
 
         /*
         // Original caffe code for comparison
@@ -283,10 +284,13 @@ PyArrayObject* corrMM(PyArrayObject* bottom,
         
         // valid convolution: im2col, then gemm
         // Iterate over batch
+        int blas_threads_saved = %(get_blas_threads)s;
+        // Always forcing gemm to one thread when OpenMP is enalbed for best and stable performance.
+        %(set_blas_threads)s(1);
         // OMP for batch-level paralization
         %(omp_flags)s
         for (int n = 0; n < batchSize; ++n) {
-        	int tid = %(omp_get_threads)s;
+        	int tid = %(get_omp_threads)s;
             // First, im2col
             im2col((%(float_type)s*)PyArray_DATA(bottom) + n * bottom_stride, nChannels, bottomHeight,
                     bottomWidth, kH, kW, padH, padW, dH, dW,                     
@@ -305,6 +309,9 @@ PyArrayObject* corrMM(PyArrayObject* bottom,
                    (%(float_type)s*)PyArray_DATA(local_weight) + 
                    tid * weight_dim[1], &K_);
         }
+        // Restore to previous blas threads
+        %(set_blas_threads)s(blas_threads_saved);
+
         //aggregate weights
         memset((%(float_type)s*)PyArray_DATA(weight), 0, M_ * K_*sizeof(%(float_type)s));
         /*
@@ -356,10 +363,13 @@ PyArrayObject* corrMM(PyArrayObject* bottom,
         // full convolution: gemm, then col2im
         // Iterate over batch
 
+        int blas_threads_saved = %(get_blas_threads)s;
+        // Always forcing gemm to one thread when OpenMP is enalbed for best and stable performance.
+        %(set_blas_threads)s(1);
         %(omp_flags)s
         for (int n = 0; n < batchSize; ++n) {
             // gemm into columns
-        	int tid = %(omp_get_threads)s;
+        	int tid = %(get_omp_threads)s;
             %(gemm)s(&NTrans, &Trans,
                    &N_, &K_, &M_,
                    &one,
@@ -371,6 +381,8 @@ PyArrayObject* corrMM(PyArrayObject* bottom,
             col2im((%(float_type)s*)PyArray_DATA(col) + tid * col_stride, nChannels, bottomHeight, bottomWidth,
                     kH, kW, padH, padW, dH, dW, (%(float_type)s*)PyArray_DATA(bottom) + n * bottom_stride);
         }
+        // Restore to previous blas threads
+        %(set_blas_threads)s(blas_threads_saved);
         /*
         // Original caffe code for comparison
         // Note that this code was translated from the Theano GPU code,
