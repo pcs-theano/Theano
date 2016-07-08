@@ -1,4 +1,4 @@
-#Theano
+#Theano*
 ---
 To install the package, see this [page](http://deeplearning.net/software/theano/install.html)
 
@@ -40,7 +40,7 @@ Theano (current directory) is the distribution directory.
 #Intel Theano
 ---
 
-This repo is dedicated to improving Theano performance when running on CPU, in particular Intel? Xeon processors (HSW+).
+This repo is dedicated to improving Theano performance when running on CPU, in particular Intel(R) Xeon processors (HSW+).
 
 * Branch **pcs-theano** includes the optimized codes based on Theano version 0.8.0rc1, get and install it via below commands:
 ```
@@ -58,3 +58,6 @@ python setup.py install
 ```
 We also provide an optimized Numpy and some benchmarks/demo cases, you can find optimized Numpy in [here](https://github.com/pcs-theano/numpy), demo cases in [here](https://github.com/pcs-theano/Benchmarks).
  
+
+---
+>\* Other names and trademarks may be claimed as the property of others.
