@@ -40,7 +40,7 @@ Theano (current directory) is the distribution directory.
 #Intel Theano
 ---
 
-This repo is dedicated to improving Theano performance when running on CPU, in particular Intel(R) Xeon processors (HSW+).
+This repo is dedicated to improving Theano performance when running on CPU, in particular Intel® Xeon® processors (HSW+).
 
 * Branch **pcs-theano** includes the optimized codes based on Theano version 0.8.0rc1, get and install it via below commands:
 ```
