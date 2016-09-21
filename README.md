@@ -2,6 +2,7 @@
 ---
 
 This repo is dedicated to improving Theano performance when running on CPU, in particular Intel® Xeon® processors (HSW+).
+
 Please refer to the document [Install_Guide.pdf](https://github.com/intel/theano/blob/master/Install_Guide.pdf) for the installation guide.
 
 * Branch **pcs-theano** includes the optimized codes based on Theano version 0.8.0rc1, get and install it via below commands:
@@ -11,9 +12,9 @@ cd pcs-theano
 python setup.py build 
 python setup.py install
 ```
-* Branch **pcs-dev** includes the optimized codes based on Theano version 0.9.0dev1.
+* Branch **master** includes the optimized codes based on Theano version 0.9.0dev1.
 ```
-git clone -b pcs-dev https://github.com/intel/theano.git pcs-theano
+git clone https://github.com/intel/theano.git pcs-theano
 cd pcs-theano
 python setup.py build 
 python setup.py install
