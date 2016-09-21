@@ -1,4 +1,27 @@
-#Theano*
+#Intel Software Optimization for Theano*
+---
+
+This repo is dedicated to improving Theano performance when running on CPU, in particular Intel® Xeon® processors (HSW+).
+Please refer to the document [Install_Guide.pdf](https://github.com/intel/theano/blob/master/Install_Guide.pdf) for the installation guide.
+
+* Branch **pcs-theano** includes the optimized codes based on Theano version 0.8.0rc1, get and install it via below commands:
+```
+git clone -b pcs-theano https://github.com/intel/theano.git pcs-theano
+cd pcs-theano
+python setup.py build 
+python setup.py install
+```
+* Branch **pcs-dev** includes the optimized codes based on Theano version 0.9.0dev1.
+```
+git clone -b pcs-dev https://github.com/intel/theano.git pcs-theano
+cd pcs-theano
+python setup.py build 
+python setup.py install
+```
+We also provide an optimized Numpy and some benchmarks/demo cases, you can find optimized Numpy in [here](https://github.com/pcs-theano/numpy), demo cases in [here](https://github.com/pcs-theano/Benchmarks).
+ 
+
+#Theano
 ---
 To install the package, see this [page](http://deeplearning.net/software/theano/install.html)
 
@@ -37,27 +60,6 @@ Theano (current directory) is the distribution directory.
 * Theano/doc contains files and scripts used to generate the documentation
 * Theano/html is where the documentation will be generated
 
-#Intel Theano
----
-
-This repo is dedicated to improving Theano performance when running on CPU, in particular Intel® Xeon® processors (HSW+).
-
-* Branch **pcs-theano** includes the optimized codes based on Theano version 0.8.0rc1, get and install it via below commands:
-```
-git clone -b pcs-theano https://github.com/intel/theano.git pcs-theano
-cd pcs-theano
-python setup.py build 
-python setup.py install
-```
-* Branch **pcs-dev** includes the optimized codes based on Theano version 0.9.0dev1.
-```
-git clone -b pcs-dev https://github.com/intel/theano.git pcs-theano
-cd pcs-theano
-python setup.py build 
-python setup.py install
-```
-We also provide an optimized Numpy and some benchmarks/demo cases, you can find optimized Numpy in [here](https://github.com/pcs-theano/numpy), demo cases in [here](https://github.com/pcs-theano/Benchmarks).
- 
-
 ---
 >\* Other names and trademarks may be claimed as the property of others.
+
