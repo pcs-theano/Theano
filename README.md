@@ -19,7 +19,7 @@ cd pcs-theano
 python setup.py build 
 python setup.py install
 ```
-We also provide an optimized Numpy and some benchmarks/demo cases, you can find optimized Numpy in [here](https://github.com/pcs-theano/numpy), demo cases in [here](https://github.com/pcs-theano/Benchmarks).
+We also provide an optimized Numpy and some benchmarks/demo cases, you can find optimized Numpy in [here](https://github.com/pcs-theano/numpy), demo cases in [here](https://github.com/intel/theano/democase).
  
 
 #Theano

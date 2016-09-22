@@ -1,0 +1,21 @@
+A drug discovery workload using DBN model developed by Kyoto University. 
+This algorithm is used to predict if the chemical structure of a compound
+can interact with the protein sequence. Deep learning neural network can
+resolve the bottleneck of exponential increase in the calculation time
+and memory consumption encountered in SVM algorithm. 
+Haswell-EP system can support 10s larger dataset than GPGPU solution due
+to the huge supported memory capacity.
+
+NOTE:
+    please download dataset for DBN-Kyoto from Dropbox via below link:
+        https://www.dropbox.com/s/ocjgzonmxpmerry/dataset1.pkl.7z?dl=0
+
+    <tools> folder contains some necessary tools required by this workload.
+    You can umcompress and install tools from the tar balls or install them
+    via apt-get/yum install command in Ubuntu/CentOS.
+
+Run the workload:
+    1. Download the dataset files from Dropbox listed in "NOTE"
+    2. Uncompress the dataset.pkl into DBN-Kyoto directory
+    3. execute below command to run the workload
+        python DBN_benchmark.py dataset1.pkl 2000 3
