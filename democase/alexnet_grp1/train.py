@@ -73,23 +73,18 @@ def train_net(config):
     ## COMPILE FUNCTIONS ##
     (train_model, validate_model, train_error, learning_rate,
         shared_x, shared_y, rand_arr, vels) = compile_models(model, config, flag_top_5=flag_top5)
-
-
     ######################### TRAIN MODEL ################################
 
     print '... training'
 
     #print shared_x.type
     if flag_para_load:
-        # [2015-10-21]
-        # Jinlong added to support parallel load for CPU version
+        # support parallel load for CPU version
         sock.send_pyobj((shared_x))
         load_send_queue.put(img_mean)
 
     n_train_batches = len(train_filenames)
     minibatch_range = range(n_train_batches)
-
-
 
     # Start Training Loop
     epoch = 0
@@ -106,8 +101,6 @@ def train_net(config):
 	    print ('config')
             load_epoch = config['load_epoch']
             load_weights(layers, config['weights_dir'], load_epoch)
-            #print layers[0].params[1].get_value()
-            #sys.exit(0)
             epoch = load_epoch + 1
             lr_to_load = np.load(
                 config['weights_dir'] + 'lr_' + str(load_epoch) + '.npy')
@@ -127,7 +120,6 @@ def train_net(config):
             load_send_queue.put('calc_finished')
 
         count = 0
-        #for minibatch_index in minibatch_range[:1]:
         for minibatch_index in minibatch_range:
 
             num_iter = (epoch - 1) * n_train_batches + count
@@ -162,8 +154,6 @@ def train_net(config):
 
             if flag_para_load and (count < len(minibatch_range)):
                 load_send_queue.put('calc_finished')
-            if count == 20:
-                sys.exit(0)
 
         ############### Test on Validation Set ##################
 

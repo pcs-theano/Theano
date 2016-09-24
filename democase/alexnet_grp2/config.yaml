@@ -4,11 +4,11 @@ resume_train: False
 load_epoch: 20
 
 # Learning Parameters
-n_epochs: 1
+n_epochs: 90
 learning_rate: 0.01  # def:0.01
 lr_policy: step  # def: step or auto
 lr_adapt_threshold: 0.01
-lr_step: [20, 40]  # def: 20, learning rate will be reduced by 10 times at these steps
+lr_step: [20, 40, 60, 80]  # def: 20, learning rate will be reduced by 10 times at these steps
 
 # Data
 use_data_layer: False
@@ -26,8 +26,8 @@ momentum: 0.9 # def: 0.9
 weight_decay: 0.0005 # def: 0.0005
 
 # Directories
-label_folder: /ilsvrc12/parsed_data/iter200_c01b/labels/
-mean_file: /ilsvrc12/parsed_data/iter200_c01b/labels/misc/img_mean.npy
+label_folder: imagenet/ilsvrc2012/labels/
+mean_file: imagenet/ilsvrc2012/misc/img_mean.npy
 weights_dir: ./weight/  # directory for saving weights and results
 
 snapshot_freq: 1  # frequency of saving weights

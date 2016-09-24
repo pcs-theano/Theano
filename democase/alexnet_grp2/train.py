@@ -106,8 +106,6 @@ def train_net(config):
 	    print ('config')
             load_epoch = config['load_epoch']
             load_weights(layers, config['weights_dir'], load_epoch)
-            #print layers[0].params[1].get_value()
-            #sys.exit(0)
             epoch = load_epoch + 1
             lr_to_load = np.load(
                 config['weights_dir'] + 'lr_' + str(load_epoch) + '.npy')
