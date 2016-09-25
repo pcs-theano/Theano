@@ -130,7 +130,7 @@ def train_net(config):
             if count == 20:
                 e = time.time()
                 print "time per 20 iter:", (e - s)
-		logger.info("time per 20 iter: %f" % (e - s)) 
+                logger.info("time per 20 iter: %f" % (e - s)) 
             cost_ij = train_model_wrap(train_model, shared_x,
                                        shared_y, rand_arr, img_mean,
                                        count, minibatch_index,
@@ -140,8 +140,6 @@ def train_net(config):
                                        config['batch_crop_mirror'],
                                        send_queue=load_send_queue,
                                        recv_queue=load_recv_queue)
-
-            #print shared_x.get_value(borrow=True)
 
             if num_iter % config['print_freq'] == 0:
                 #print 'training @ iter = ', num_iter

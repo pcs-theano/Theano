@@ -88,8 +88,6 @@ class ConvPoolLayer(object):
         self.lrn = lrn
         assert group in [1, 2]
 
-        #self.filter_shape = np.asarray(filter_shape)
-        #self.image_shape = np.asarray(image_shape)
         self.filter_shape = list(filter_shape)
         self.image_shape = list(image_shape)
 
@@ -116,6 +114,7 @@ class ConvPoolLayer(object):
                               input_shape=self.image_shape,
                               subsample=(convstride, convstride),
                               border_mode=padsize,
+                              filter_flip=False,
                               )
             conv_out = conv_out + self.b.val.dimshuffle('x', 0, 'x', 'x')
         else:
@@ -126,6 +125,7 @@ class ConvPoolLayer(object):
                        input_shape=self.image_shape,
                        subsample=(convstride, convstride),
                        border_mode=padsize,
+                       filter_flip=False,
                        )
             conv_out0 = conv_out0 + self.b0.val.dimshuffle('x', 0, 'x', 'x')
 
@@ -136,6 +136,7 @@ class ConvPoolLayer(object):
                        input_shape=self.image_shape,
                        subsample=(convstride, convstride),
                        border_mode=padsize,
+                       filter_flip=False,
                        )
             conv_out1 = conv_out1 + self.b1.val.dimshuffle('x', 0, 'x', 'x')
 
@@ -147,7 +148,7 @@ class ConvPoolLayer(object):
         # Pooling
         if self.poolsize != 1:
             self.output = downsample.max_pool_2d(input=self.output,
-                                        ds=(poolsize, poolstride),
+                                        ds=(poolsize, poolsize),
                                         st=(poolstride, poolstride),
                                         ignore_border=True)
 
@@ -188,6 +189,7 @@ class DropoutLayer(object):
 
         self.prob_drop = prob_drop
         self.prob_keep = 1.0 - prob_drop
+        self.scale = 1.0 / self.prob_keep
         self.flag_on = theano.shared(np.cast[theano.config.floatX](1.0))
         self.flag_off = 1.0 - self.flag_on
 
@@ -196,8 +198,8 @@ class DropoutLayer(object):
         self.mask = mask_rng.binomial(n=1, p=self.prob_keep, size=input.shape)
 
         self.output = \
-            self.flag_on * T.cast(self.mask, theano.config.floatX) * input + \
-            self.flag_off * self.prob_keep * input
+            self.flag_on * self.scale * T.cast(self.mask, theano.config.floatX) * input + \
+            self.flag_off * input
 
         DropoutLayer.layers.append(self)
 

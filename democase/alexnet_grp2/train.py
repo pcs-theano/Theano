@@ -146,8 +146,6 @@ def train_net(config):
                                        send_queue=load_send_queue,
                                        recv_queue=load_recv_queue)
 
-            #print shared_x.get_value(borrow=True)
-
             if num_iter % config['print_freq'] == 0:
                 #print 'training @ iter = ', num_iter
                 #print 'training cost:', cost_ij
