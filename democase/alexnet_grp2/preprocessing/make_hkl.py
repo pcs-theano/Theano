@@ -63,23 +63,6 @@ def save_batches(file_list, tar_dir, batch_count, mean_output,
     #batch_count = 0
     count = 0
 
-    # for debug
-    """
-    file1 = r"/root/jinhou/DL_dataset/ilsvrc12/parsed_data/train_hkl_b256_b_256chwb/0001.hkl"
-    file2 = r"/root/jinhou/DL_dataset/ilsvrc12/parsed_data/train_hkl_b256_b_256bchw/0001.hkl"
-    data1 = hkl.load(file1)
-    data2 = hkl.load(file2)
-    print data1.shape, data2.shape
-    for ind in xrange(data1.shape[3]):
-        arr1 = data1[:, :, :, ind]
-        arr2 = data2[ind, :, :, :]
-        diff = arr1 - arr2
-        print diff
-        print diff.shape
-
-    sys.exit(0)
-    """
-
     if data_format == 'bchw':
         for file_name in file_list:
             #print 'bchw:', file_name
@@ -239,22 +222,7 @@ if __name__ == '__main__':
         train_filenames = train_filenames[:2560]
         val_filenames = val_filenames[:2560]
 
-    """
-    # for debug
-    file1 = r"/root/jinhou/DL_dataset/ilsvrc12/parsed_data/train_hkl_b256_b_256bchw/0001.hkl"
-    file2 = r"/root/jinhou/DL_dataset/ilsvrc12/parsed_data/train_hkl_b256_b256.0_bchw/0001.hkl"
-    data1 = hkl.load(file1)
-    data2 = hkl.load(file2)
-    print data1.shape, data2.shape
-    for ind in xrange(data1.shape[0]):
-        arr1 = data1[ind, :, :, :]
-        arr2 = data2[ind, :, :, :]
-        diff = arr1 - arr2
-        print diff
-    sys.exit(0)
-    #"""
-
-    # Jinlong added to support multi-process 
+    # added to support multi-process 
     num_process = 16
     train_batch_num = int( math.ceil(len(train_filenames)/train_batch_size) )
     train_batchs_per_core = train_batch_num // num_process
@@ -263,7 +231,7 @@ if __name__ == '__main__':
     val_batchs_per_core = val_batch_num // num_process
     #print batchs_per_core
 
-    for num_sub_batch in [1]:    # Jinlong modified
+    for num_sub_batch in [1]:
     #for num_sub_batch in [1, 2]:
         for data_format in ['bchw']:
         #for data_format in ['bchw', 'chwb']:
@@ -274,7 +242,7 @@ if __name__ == '__main__':
             tar_val_dir += '_b' + str(val_batch_size) + \
                 '_b' + str(val_batch_size // num_sub_batch) + "_" + data_format
 
-            # Jinlong added to support multi-process: 2015-10-19
+            # added to support multi-process: 2015-10-19
             mean_output = mp.Queue() # Define an output queue
             processes = [mp.Process(target=save_batches,
                                 args=(
