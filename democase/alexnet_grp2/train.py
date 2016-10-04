@@ -15,7 +15,7 @@ from datetime import datetime
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(message)s',
                     datefmt='%y-%m-%d %H:%M:%S',
-                    filename='./temp/alexnet_time.log',
+                    filename='./alexnet_time_tmp.log',
                     filemode='w')
 # define a Handler which writes INFO messages or higher to the sys.stderr
 console = logging.StreamHandler()

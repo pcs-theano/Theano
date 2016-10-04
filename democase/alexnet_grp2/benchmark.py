@@ -18,7 +18,7 @@ sys.path.append('./lib')
 
 
 def time_theano_run(func, info_string):
-    num_batches = 50
+    num_batches = 100
     num_steps_burn_in = 10
     durations = []
     for i in xrange(num_batches + num_steps_burn_in):
