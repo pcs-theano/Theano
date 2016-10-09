@@ -10,6 +10,8 @@ from theano.gof.opt import copy_stack_trace
 
 from theano.tensor.nnet.corr import (
     CorrMM, CorrMM_gradInputs, CorrMM_gradWeights)
+from theano.tensor.nnet.conv_mkldnn import (
+        conv_forward, conv_gradInputs, conv_gradWeights)
 from theano.tensor.nnet.blocksparse import (
     SparseBlockGemv,
     SparseBlockOuter,
@@ -62,6 +64,109 @@ compile.optdb.register('local_inplace_sparse_block_outer',
                            failure_callback=gof.TopoOptimizer.warn_inplace),
                        60, 'fast_run', 'inplace')  # DEBUG
 
+# Conv_mkldnn opts
+@local_optimizer([AbstractConv2d])
+def local_abstractconv_mkldnn(node):
+    if theano.config.cxx == "" or not theano.config.blas.ldflags:
+        return
+    if not isinstance(node.op, AbstractConv2d):
+        return None
+    img, kern = node.inputs
+    if not isinstance(img.type, TensorType) or \
+       not isinstance(kern.type, TensorType):
+        return None
+
+    # need to flip the kernel if necessary
+    if node.op.filter_flip:
+        kern = kern[:, :, ::-1, ::-1]
+
+    if node.op.imshp is None:
+        op_imshp = (None, None, None, None)
+    else:
+        op_imshp = node.op.imshp
+
+    if node.op.kshp is None:
+        op_kshp = (None, None, None, None)
+    else:
+        op_kshp = node.op.kshp
+
+    rval = conv_forward(border_mode=node.op.border_mode,
+                  subsample=node.op.subsample,
+                  imshp=op_imshp,
+                  kshp=op_kshp)(img, kern)
+    #rval = conv_forward(border_mode=node.op.border_mode,
+    #              subsample=node.op.subsample)(img, kern)
+    copy_stack_trace(node.outputs[0], rval)
+
+    return [rval]
+
+@local_optimizer([AbstractConv2d_gradWeights])
+def local_abstractconv_gradweight_mkldnn(node):
+    if theano.config.cxx == "" or not theano.config.blas.ldflags:
+        return
+    if not isinstance(node.op, AbstractConv2d_gradWeights):
+        return None
+    img, topgrad, shape = node.inputs
+    if not isinstance(img.type, TensorType) or \
+       not isinstance(topgrad.type, TensorType):
+        return None
+
+    if node.op.imshp is None:
+        op_imshp = (None, None, None, None)
+    else:
+        op_imshp = node.op.imshp
+
+    if node.op.kshp is None:
+        op_kshp = (None, None, None, None)
+    else:
+        op_kshp = node.op.kshp
+
+    rval = conv_gradWeights(border_mode=node.op.border_mode,
+                              subsample=node.op.subsample,
+                              imshp=op_imshp, kshp=op_kshp)(img, topgrad, shape)
+    copy_stack_trace(node.outputs[0], rval)
+
+    # need to flip the kernel if necessary
+    if node.op.filter_flip:
+        rval = rval[:, :, ::-1, ::-1]
+    rval = theano.tensor.patternbroadcast(rval, node.outputs[0].broadcastable)
+    copy_stack_trace(node.outputs[0], rval)
+
+    return [rval]
+
+
+@local_optimizer([AbstractConv2d_gradInputs])
+def local_abstractconv_gradinputs_mkldnn(node):
+    if theano.config.cxx == "" or not theano.config.blas.ldflags:
+        return
+    if not isinstance(node.op, AbstractConv2d_gradInputs):
+        return None
+    kern, topgrad, shape = node.inputs
+    if not isinstance(kern.type, TensorType) or \
+       not isinstance(topgrad.type, TensorType):
+        return None
+
+    # need to flip the kernel if necessary
+    if node.op.filter_flip:
+        kern = kern[:, :, ::-1, ::-1]
+
+    if node.op.imshp is None:
+        op_imshp = (None, None, None, None)
+    else:
+        op_imshp = node.op.imshp
+
+    if node.op.kshp is None:
+        op_kshp = (None, None, None, None)
+    else:
+        op_kshp = node.op.kshp
+
+    rval = conv_gradInputs(border_mode=node.op.border_mode,
+                             subsample=node.op.subsample,
+                             imshp=op_imshp,
+                             kshp=op_kshp)(kern, topgrad, shape)
+    copy_stack_trace(node.outputs[0], rval)
+
+    return [rval]
 
 # Conv opts
 @local_optimizer([AbstractConv2d])
@@ -363,6 +468,17 @@ def local_conv2d_gradinputs_cpu(node):
 conv_groupopt = theano.gof.optdb.LocalGroupDB()
 conv_groupopt.__name__ = "conv_opts"
 register_specialize_device(conv_groupopt, 'fast_compile', 'fast_run')
+
+# MKLDNN-based convolution
+# It can be disabled by excluding 'conv_mkldnn'.
+#conv_groupopt.register('local_abstractconv_mkldnn', local_abstractconv_mkldnn, 20,
+#                       'conv_mkldnn', 'fast_compile', 'fast_run')
+#conv_groupopt.register('local_abstractconv_gradweight_mkldnn',
+#                       local_abstractconv_gradweight_mkldnn, 20,
+#                       'conv_mkldnn', 'fast_compile', 'fast_run')
+#conv_groupopt.register('local_abstractconv_gradinputs_mkldnn',
+#                       local_abstractconv_gradinputs_mkldnn, 20,
+#                       'conv_mkldnn', 'fast_compile', 'fast_run')
 
 # GEMM-based convolution
 # It can be disabled by excluding 'conv_gemm'.

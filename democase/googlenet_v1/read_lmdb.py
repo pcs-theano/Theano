@@ -63,7 +63,7 @@ def get_image_mean(image_mean, image_shape):
         image_mean_out = image_mean_out[np.newaxis]
     else:
         blob = caffe.proto.caffe_pb2.BlobProto()
-        data = open(image_mean, 'rb').read()
+        data = open(image_mean, 'r').read()
         blob.ParseFromString(data[0:-1])
         image_mean_out = np.array(caffe.io.blobproto_to_array(blob))
     return image_mean_out

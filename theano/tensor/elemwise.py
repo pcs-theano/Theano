@@ -1215,7 +1215,7 @@ second dimension
             dtype_%(x)s& %(x)s_i = ((dtype_%(x)s*) PyArray_DATA(%(x)s))[0];
                             """ % locals()
                     if self.openmp:
-                        contig += """#pragma omp parallel for if(n>=%d)
+                        contig += """#pragma omp parallel for simd schedule(static) if(n>=%d)
                         """ % (config.openmp_elemwise_minsize)
                     contig += """
                     for(int i=0; i<n; i++){
@@ -1659,45 +1659,8 @@ for(int i=0;i<PyArray_NDIM(%(iname)s);i++){
         }
         """ % locals()
 
-        ParallelFlag = 0
         if node.inputs[0].type.ndim:
             if len(axis) == 1:
-                def loop_dec(sub, orders, dtype, name, flag):
-                    code = "%(dtype)s& %(name)s_i = *(%(name)s_iter+" % locals()
-                    stride = [] 
-                    dims = [] 
-                    for j, index in enumerate(orders):
-                        stride.append("%(name)s_jump%(index)s_%(j)s" % locals())
-                        dims.append("%(name)s_n%(index)s" % locals())
-                    for j, index in enumerate(orders):
-                        if index != 'x': 
-                            if j < len(orders) - 1: 
-                                code += "("
-                                for k in xrange(j, len(orders) - flag - 1):
-                                    code += dims[k + 1 - flag]
-                                    code += " * "
-                                    code += stride[k + 1] 
-                                    code += " + "
-                                code += "%(name)s_jump%(index)s_%(j)s) * ITER_%(j)s " % locals()
-                            else:
-                                code += "%(name)s_jump%(index)s_%(j)s * ITER_%(j)s " % locals()
-                        else:
-                            code += "%(name)s_jump%(index)s_%(j)s" % locals()
-                        if j < len(orders) - 1: 
-                            code += " + "
-                    code += ");" 
-                    return code 
-                if len(order) == 2 and odtype == 'npy_float32':
-                    task0_decl = loop_dec(sub, list(range(nnested)) + ['x'] * len(axis), adtype, aname, 1)
-                    task0_decl += "\n %(name)s_i = %(identity)s;" % dict(name=aname, identity=identity)
-                    task1_decl = loop_dec(sub, order, idtype, inames[0], 0)
-                    code1 = """
-                         {
-                            %(task1_decl)s
-                            %(task1_code)s
-                         }
-                        """ % locals()
-                    ParallelFlag = 1
                 all_code = [("", "")] * nnested + [(task0_decl, code1), ""]
             else:
                 all_code = ([("", "")] * nnested +
@@ -1708,7 +1671,7 @@ for(int i=0;i<PyArray_NDIM(%(iname)s);i++){
             all_code = [task0_decl + code1]
         loop = cgen.make_loop_careduce(
             [order, list(range(nnested)) + ['x'] * len(axis)],
-            [idtype, adtype], all_code, sub, ParallelFlag)
+            [idtype, adtype], all_code, sub)
 
         end = ""
         if adtype != odtype:

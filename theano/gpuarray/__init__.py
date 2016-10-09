@@ -28,7 +28,7 @@ from .type import (GpuArrayType, GpuArrayVariable, GpuArrayConstant,
                    GpuArraySharedVariable, gpuarray_shared_constructor,
                    reg_context, get_context, ContextNotDefined)
 from .basic_ops import as_gpuarray_variable
-from . import dnn, opt, nerv, extra_ops
+from . import fft, dnn, opt, nerv, extra_ops
 
 def transfer(x, target):
     try:
@@ -62,7 +62,8 @@ def init_dev(dev, name=None):
     global pygpu_activated
     if dev not in init_dev.devmap:
         ctx = pygpu.init(dev,
-                         disable_alloc_cache=config.gpuarray.preallocate < 0)
+                         disable_alloc_cache=config.gpuarray.preallocate < 0,
+                         single_stream=config.gpuarray.single_stream)
         init_dev.devmap[dev] = ctx
         if config.gpuarray.preallocate > 0:
             MB = (1024 * 1024)

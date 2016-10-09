@@ -3,6 +3,7 @@ sys.path.append('./lib')
 import theano
 theano.config.on_unused_input = 'warn'
 import theano.tensor as T
+from theano.tensor.nnet import conversionOp
 
 import numpy as np
 
@@ -39,9 +40,13 @@ class AlexNet(object):
         else:
             layer1_input = x
 
+        u2iOp = conversionOp.U2I('conv','dnnResourceSrc', (96, 3, 11, 11)+(batch_size, 3, 227, 227)+(4, 4)+(0,0)+(1,), uniq_name=1)
+        layer1_input = u2iOp(layer1_input)
+
         convpool_layer1 = ConvPoolLayer(input=layer1_input,
                                         image_shape=(batch_size, 3, 227, 227), 
-                                        filter_shape=(96, 3, 11, 11), 
+                                        #filter_shape=(96, 3, 11, 11), 
+                                        filter_shape=(1, 96, 3, 11, 11), 
                                         convstride=4, padsize=0, group=1, 
                                         poolsize=3, poolstride=2, 
                                         bias_init=0.0, lrn=True,
@@ -53,7 +58,8 @@ class AlexNet(object):
 
         convpool_layer2 = ConvPoolLayer(input=convpool_layer1.output,
                                         image_shape=(batch_size, 96, 27, 27),
-                                        filter_shape=(256, 96, 5, 5), 
+                                        #filter_shape=(256, 96, 5, 5), 
+                                        filter_shape=(2, 128, 48, 5, 5), 
                                         convstride=1, padsize=2, group=2, 
                                         poolsize=3, poolstride=2, 
                                         bias_init=0.1, lrn=True,
@@ -64,7 +70,8 @@ class AlexNet(object):
 
         convpool_layer3 = ConvPoolLayer(input=convpool_layer2.output,
                                         image_shape=(batch_size, 256, 13, 13),
-                                        filter_shape=(384, 256, 3, 3), 
+                                        #filter_shape=(384, 256, 3, 3), 
+                                        filter_shape=(1, 384, 256, 3, 3), 
                                         convstride=1, padsize=1, group=1, 
                                         poolsize=1, poolstride=0, 
                                         bias_init=0.0, lrn=False,
@@ -75,7 +82,9 @@ class AlexNet(object):
 
         convpool_layer4 = ConvPoolLayer(input=convpool_layer3.output,
                                         image_shape=(batch_size, 384, 13, 13),
-                                        filter_shape=(384, 384, 3, 3), 
+                                        #filter_shape=(384, 384, 3, 3), 
+                                        filter_shape=(2, 192, 192, 3, 3), 
+                                        #convstride=1, padsize=1, group=1, 
                                         convstride=1, padsize=1, group=2, 
                                         poolsize=1, poolstride=0, 
                                         bias_init=0.1, lrn=False,
@@ -86,7 +95,9 @@ class AlexNet(object):
 
         convpool_layer5 = ConvPoolLayer(input=convpool_layer4.output,
                                         image_shape=(batch_size, 384, 13, 13),
-                                        filter_shape=(256, 384, 3, 3), 
+                                        #filter_shape=(256, 384, 3, 3), 
+                                        filter_shape=(2, 128, 192, 3, 3), 
+                                        #convstride=1, padsize=1, group=1, 
                                         convstride=1, padsize=1, group=2, 
                                         poolsize=3, poolstride=2, 
                                         bias_init=0.1, lrn=False,
@@ -95,7 +106,12 @@ class AlexNet(object):
         params += convpool_layer5.params
         weight_types += convpool_layer5.weight_type
 
-        fc_layer6_input = T.flatten(convpool_layer5.output, 2)
+        i2uOp = conversionOp.I2U(uniq_name=1)
+        i2uoutput = i2uOp(convpool_layer5.output)
+
+        fc_layer6_input = T.flatten(i2uoutput, 2)
+        #fc_layer6_input = T.flatten(convpool_layer5.output, 2)
+
         fc_layer6 = FCLayer(input=fc_layer6_input, n_in=9216, n_out=4096)
         self.layers.append(fc_layer6)
         params += fc_layer6.params

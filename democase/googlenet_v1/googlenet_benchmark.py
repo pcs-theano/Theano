@@ -2,12 +2,12 @@ import theano
 theano.config.floatX='float32'
 import theano.tensor as T
 import numpy as np
-from googlenet_theano import googlenet, compile_val_model, compile_train_model, set_learning_rate
+from googlenet_theano import googlenet, compile_models, set_learning_rate
 import time
 from datetime import datetime
 
 def time_theano_run(func, info_string):
-    num_batches = 100
+    num_batches = 50
     num_steps_burn_in = 10
     durations = []
     for i in xrange(num_batches + num_steps_burn_in):
@@ -24,39 +24,25 @@ def time_theano_run(func, info_string):
           (datetime.now(), info_string, durations.mean()*1000))
 
 
-def googlenet_train(train_batch_size=32, val_batch_size=50, image_size=(3, 224, 224), n_epochs=60):
+def googlenet_train(batch_size=256, image_size=(3, 224, 224), n_epochs=60, mkldnn=False):
     
-    # train model
-    train_input_shape = (train_batch_size,) + image_size
-    training_model = googlenet(train_input_shape)
+    input_shape = (batch_size,) + image_size
+    model = googlenet(input_shape, mkldnn)
 
-    (train_model, train_error, train_shared_x, train_shared_y,
-            shared_lr) = compile_train_model(training_model, batch_size=train_batch_size)
-    train_images = np.random.random_integers(0, 255, train_input_shape).astype('float32')
-    train_labels = np.random.random_integers(0, 999, train_batch_size).astype('int32')
-    train_shared_x.set_value(train_images)
-    train_shared_y.set_value(train_labels)
+    (train_model, validate_model, train_error,
+        shared_x, shared_y, shared_lr, vels) = compile_models(model, batch_size = batch_size)
 
+    images = np.random.random_integers(0, 255, input_shape).astype('float32')
+    labels = np.random.random_integers(0, 999, batch_size).astype('int32')
+    shared_x.set_value(images)
+    shared_y.set_value(labels)
     iter = 0
     set_learning_rate(shared_lr, iter)
 
-    # validation model 
-    val_input_shape = (val_batch_size,) + image_size
-    validation_model = googlenet(val_input_shape)
-
-    (val_model, val_shared_x, val_shared_y) = compile_val_model(validation_model, batch_size=val_batch_size)
-    val_images = np.random.random_integers(0, 255, val_input_shape).astype('float32')
-    val_labels = np.random.random_integers(0, 999, val_batch_size).astype('int32')
-    val_shared_x.set_value(val_images)
-    val_shared_y.set_value(val_labels)
-
-    # forward benchmark
-    validation_model.set_dropout_off()
-    time_theano_run(val_model, 'Forward')
-
-    # forward-backward benchmark
-    training_model.set_dropout_on()
+    model.set_dropout_off()
+    time_theano_run(validate_model, 'Forward')
+    model.set_dropout_on()
     time_theano_run(train_model, 'Forward-Backward')
 
 if __name__ =='__main__':
-    googlenet_train(train_batch_size=32, val_batch_size=50)
+    googlenet_train(batch_size=32, mkldnn=True)

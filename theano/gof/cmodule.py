@@ -1474,10 +1474,25 @@ class ModuleCache(object):
 
 def _rmtree(parent, ignore_nocleanup=False, msg='', level=logging.DEBUG,
             ignore_if_missing=False):
-    # On NFS filesystems, it is impossible to delete a directory with open
-    # files in it.  So instead, some commands in this file will respond to a
-    # failed rmtree() by touching a 'delete.me' file.  This file is a message
-    # for a future process to try deleting the directory.
+    """
+    On NFS filesystems, it is impossible to delete a directory with open
+    files in it.
+
+    So instead, some commands in this file will respond to a
+    failed rmtree() by touching a 'delete.me' file.  This file is a message
+    for a future process to try deleting the directory.
+
+    Parameters:
+    ----------
+    parent
+        Root node to start deleting from
+    ignore_nocleanup
+        Delete the tree if flag is TRUE
+    level
+        Python Logging level. Set to "DEBUG" by default
+    ignore_if_missing
+        If set to True, just return without any issue if parent is NULL
+    """
     if ignore_if_missing and not os.path.exists(parent):
         return
     try:
@@ -1504,6 +1519,7 @@ _module_cache = None
 
 def get_module_cache(dirname, init_args=None):
     """
+    Create a new module_cache with the (k, v) pairs in this dictionary
 
     Parameters
     ----------
@@ -1846,7 +1862,6 @@ class GCC_compiler(Compiler):
             for f in cxxflags:
                 # If the user give an -march=X parameter, don't add one ourself
                 if ((f.startswith("--march=") or f.startswith("-march="))):
-                    ## FIXME, pcs
                     '''
                     _logger.warn(
                         "WARNING: your Theano flags `gcc.cxxflags` specify"
@@ -1860,8 +1875,8 @@ class GCC_compiler(Compiler):
 
         if ('g++' not in theano.config.cxx and
                 'clang++' not in theano.config.cxx and
-                'clang-omp++' not in theano.config.cxx and
-                'icpc' not in theano.config.cxx):
+                'clang-omp++' not in theano.config.cxx):
+            '''
             _logger.warn(
                 "OPTIMIZATION WARNING: your Theano flag `cxx` seems not to be"
                 " the g++ compiler. So we disable the compiler optimization"
@@ -1870,6 +1885,7 @@ class GCC_compiler(Compiler):
                 "         You can add those parameters to the compiler yourself"
                 " via the Theano flag `gcc.cxxflags`."
             )
+            '''
             detect_march = False
 
         if detect_march:

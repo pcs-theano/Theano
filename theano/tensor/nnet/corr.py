@@ -9,13 +9,14 @@ from theano import Apply
 from theano import gof
 from theano.tensor import as_tensor_variable, TensorType
 from theano.tensor.nnet.abstract_conv import get_conv_output_shape
-from theano.tensor import blas_headers
-from theano.tensor.blas import ldflags, blas_header_version
+from theano.tensor.blas_headers import blas_header_text
+from theano.tensor.blas import ldflags
+
 
 _logger = logging.getLogger(__name__)
 
 
-class BaseCorrMM(gof.OpenMPOp):
+class BaseCorrMM(gof.Op):
     """
     Base class for `CorrMM`, `CorrMM_gradWeights` and
     `CorrMM_gradInputs`. Cannot be used directly.
@@ -31,8 +32,7 @@ class BaseCorrMM(gof.OpenMPOp):
     check_broadcast = False
     __props__ = ('border_mode', 'subsample')
 
-    def __init__(self, border_mode="valid", subsample=(1, 1), openmp=None):
-        super(BaseCorrMM, self).__init__(openmp=openmp)
+    def __init__(self, border_mode="valid", subsample=(1, 1)):
         if isinstance(border_mode, integer_types):
             if border_mode < 0:
                 raise ValueError(
@@ -57,16 +57,6 @@ class BaseCorrMM(gof.OpenMPOp):
             raise ValueError("subsample must have two elements")
         self.subsample = tuple(subsample)
 
-        if not theano.config.blas.ldflags:
-            raise NotImplementedError("C code for corrMM* classes need a blas library.")
-        else:
-            if 'openblas' in theano.config.blas.ldflags:
-                self.blas_type = 'openblas'
-            elif 'mkl' in theano.config.blas.ldflags:
-                self.blas_type = 'mkl'
-            else:
-                self.blas_type = ''
-
     @property
     def pad(self):
         if self.border_mode != 'valid':
@@ -80,20 +70,13 @@ class BaseCorrMM(gof.OpenMPOp):
             str(self.subsample))
 
     def c_support_code(self):
-        ccodes = blas_headers.blas_header_text()
-        if self.blas_type == 'openblas':
-            ccodes += blas_headers.openblas_threads_text()
-        elif self.blas_type == 'mkl':
-            ccodes += blas_headers.mkl_threads_text()
-        return ccodes
+        return blas_header_text()
 
     def c_libraries(self):
         return ldflags()
 
     def c_compile_args(self):
-        compile_args = ldflags(libs=False, flags=True)
-        compile_args += super(BaseCorrMM, self).c_compile_args()
-        return compile_args
+        return ldflags(libs=False, flags=True)
 
     def c_lib_dirs(self):
         return ldflags(libs=False, libs_dir=True)
@@ -102,13 +85,11 @@ class BaseCorrMM(gof.OpenMPOp):
         return ldflags(libs=False, include_dir=True)
 
     def c_headers(self):
-        headers = ['<stdio.h>']
-        headers += super(BaseCorrMM, self).c_headers()
-        return headers
+        return ['<stdio.h>']
 
     def c_code_cache_version(self):
         # raise this whenever modifying any of the support_code_files
-        return (1, self.openmp, blas_header_version())
+        return (1, 1)
 
     def c_support_code_apply(self, node, nodename):
         # REMEMBER TO RAISE c_code_cache_version when changing any of
@@ -128,27 +109,6 @@ class BaseCorrMM(gof.OpenMPOp):
             sub['float_typenum'] = 'NPY_DOUBLE'
             sub['n_bytes'] = 8
             sub['c_float_type'] = 'double'
-
-        if self.openmp:
-            sub['omp_flags'] = '#pragma omp parallel for schedule(static)'
-            sub['omp_max_threads'] = 'omp_get_max_threads()'
-            sub['set_omp_threads'] = 'omp_set_num_threads'
-            sub['get_omp_threads'] = 'omp_get_thread_num()'
-
-            if self.blas_type == 'openblas':
-                sub['set_blas_threads'] = 'openblas_set_num_threads'
-                sub['get_blas_threads'] = 'openblas_get_num_threads()'
-            elif self.blas_type == 'mkl':
-                sub['set_blas_threads'] = 'mkl_set_num_threads'
-                sub['get_blas_threads'] = 'mkl_get_max_threads()'
-        else:
-            sub['omp_flags'] = ''
-            sub['omp_max_threads'] = '1'
-            sub['set_omp_threads'] = ''
-            sub['get_omp_threads'] = '0'
-            sub['set_blas_threads'] = ''
-            sub['get_blas_threads'] = '0'
-
         files = ['corr_gemm.c']
         codes = [open(os.path.join(os.path.split(__file__)[0], f)).read()
                  for f in files]
@@ -192,6 +152,8 @@ class BaseCorrMM(gof.OpenMPOp):
             If self.border_mode == 'half', a variable giving the width of the
             filters for direction="backprop weights".  Ignored otherwise.
         """
+        if not theano.config.blas.ldflags:
+            raise NotImplementedError("C code for CorrMM* classes need a blas library.")
         dH, dW = self.subsample
         if self.border_mode == "half":
             padH = padW = -1
@@ -350,8 +312,7 @@ class BaseCorrMM(gof.OpenMPOp):
         else {
           typenum = PyArray_TYPE(bottom);
         }
-        //Change to PyArray_ZEROS which is faster than PyArray_EMPTY.
-        %(out)s = (PyArrayObject*)PyArray_ZEROS(4,
+        %(out)s = (PyArrayObject*)PyArray_EMPTY(4,
                                           out_dim,
                                           typenum,
                                           0);
@@ -398,6 +359,8 @@ class CorrMM(BaseCorrMM):
         Set to `(1, 1)` to disable subsampling.
 
     """
+    def __init__(self, border_mode="valid", subsample=(1, 1)):
+        super(CorrMM, self).__init__(border_mode, subsample)
 
     def make_node(self, img, kern):
         img = as_tensor_variable(img)
@@ -451,6 +414,9 @@ class CorrMM_gradWeights(BaseCorrMM):
     use it as needed.
 
     """
+
+    def __init__(self, border_mode="valid", subsample=(1, 1)):
+        super(CorrMM_gradWeights, self).__init__(border_mode, subsample)
 
     def make_node(self, img, topgrad, shape=None):
         img = as_tensor_variable(img)
@@ -545,6 +511,9 @@ class CorrMM_gradInputs(BaseCorrMM):
     use it as needed.
 
     """
+
+    def __init__(self, border_mode="valid", subsample=(1, 1)):
+        super(CorrMM_gradInputs, self).__init__(border_mode, subsample)
 
     def make_node(self, kern, topgrad, shape=None):
         kern = as_tensor_variable(kern)

@@ -1,60 +1,44 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Fri Jul 08 08:55:51 2016
-
-@author: lilu
-"""
-
 import sys
 
 import numpy as np
 import theano
 import theano.tensor as T
 from theano.tensor.signal.pool import pool_2d
+from theano.tensor.signal import pool_mkldnn
+from theano.tensor.nnet import conv_mkldnn, conv, conversionOp, relu_mkldnn, norm_lrn_mkldnn, concat3
 
 import warnings
 warnings.filterwarnings("ignore")
-
+uniq_id = 0
 rng = np.random.RandomState(23455)
-
       
 class SoftmaxLayer(object):
 
-    def __init__(self, input, input_shape, num_units, has_b=True, init_b=0):
+    def __init__(self, input, input_shape, num_units):
+        
         self.input_shape = input_shape
         self.num_units = num_units
-        num_input_channels = np.int32(np.prod(self.input_shape[1:]))
+        num_input_channels = int(np.prod(self.input_shape[1:]))
         std = np.sqrt(2. / (num_input_channels + self.num_units))
         np_values = np.asarray(rng.uniform(low=-std, high=std, size=(num_input_channels, self.num_units)), dtype=theano.config.floatX)
         self.W = theano.shared(value=np_values, name='W', borrow=True)
-
-        if has_b:
-            b_values = np.zeros((self.num_units,), dtype=theano.config.floatX)
-            if init_b != 0:
-                b_values.fill(init_b)
-            self.b = theano.shared(value=b_values)
+        b_values = np.zeros((self.num_units,), dtype=theano.config.floatX)
+        self.b = theano.shared(value=b_values)
         
         if input.ndim > 2:
             input = input.flatten(2)
               
         activation = T.dot(input, self.W)
-        if has_b:
-            activation = activation + self.b.dimshuffle('x', 0)
+        activation = activation + self.b.dimshuffle('x', 0)
         #self.output = T.nnet.relu(activation)
         self.output = activation
         self.p_y_given_x = T.nnet.softmax(self.output)
         #self.output = self.p_y_given_x
         self.y_pred = T.argmax(self.p_y_given_x, axis=1)
-        if has_b:
-            self.params = [self.W, self.b]
-            self.weight_types = ['W', 'b']
-        else:
-            self.params = [self.W]
-            self.weight_types = ['W']
+        self.params = [self.W, self.b]
+        self.weight_types = ['W', 'b']
         
-       # print 'softmax layer with num_in: ' + str(input_shape[1]) + \
-       #     ' num_out: ' + str(self.num_units)
-
     def negative_log_likelihood(self, y):
         return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
     
@@ -86,7 +70,6 @@ class SoftmaxLayer(object):
             return T.mean(T.min(T.neq(y_pred_top_x, y_top_x), axis=1))
         else:
             raise NotImplementedError()
-
 
 class DropoutLayer(object):
     seed_common = np.random.RandomState(0)  # for deterministic results
@@ -124,7 +107,6 @@ class DropoutLayer(object):
     def SetDropoutOff():
         for i in range(0, len(DropoutLayer.layers)):
             DropoutLayer.layers[i].flag_on.set_value(0.0)
-
      
 class DataLayer(object):
 
@@ -156,12 +138,11 @@ class DataLayer(object):
 
         #print "data layer with shape_in: " + str(input_shape)
 
-
 class Conv2DLayer(object):
 
-    def __init__(self, input, input_shape, filter_shape, convstride=1,
-    padsize=0, flip_filters=False, has_b=True, init_b=0):
-        
+    def __init__(self, input, input_shape, filter_shape, convstride=1, padsize=0, flip_filters=False, mkldnn=False):
+        global uniq_id
+        uniq_id+=1
         assert input_shape[1] == filter_shape[1]
         self.filter_size = (filter_shape[-1],) * 2
         self.input_shape = input_shape
@@ -169,37 +150,33 @@ class Conv2DLayer(object):
         self.convstride = (convstride,) * 2
         self.pad = (padsize,) * 2
         n1, n2 = filter_shape[:2]
-        receptive_field_size = np.prod(filter_shape[2:]) 
+        receptive_field_size = np.prod(filter_shape[2:])
         std = np.sqrt(2.0 / ((n1 + n2) * receptive_field_size))
         self.np_values = np.asarray(
                 rng.uniform(low=-std, high=std, size=filter_shape), dtype=theano.config.floatX)
         self.W = theano.shared(value=self.np_values, borrow=True)
-
-        if has_b:
-            b_values = np.ones((filter_shape[0],), dtype=theano.config.floatX)
-            if init_b:
-                b_values.fill(init_b)
-            self.b = theano.shared(value=b_values)
-                   
+        b_values = 0.2 * np.ones((filter_shape[0],), dtype=theano.config.floatX)
+        self.b = theano.shared(value=b_values)       
         self.input = input
         border_mode = self.pad
-        conved = T.nnet.conv2d(input, self.W,
-                                  input_shape, filter_shape,
-                                  subsample=self.convstride,
-                                  border_mode=border_mode,
-                                  filter_flip=flip_filters)
-        if has_b:
-            activation = conved + self.b.dimshuffle('x', 0, 'x', 'x')
-        else:
-            activation = conved
 
-        self.output = T.nnet.relu(activation)  
-        if has_b:
-            self.params = [self.W, self.b]
-            self.weight_types = ['W', 'b']
+        if mkldnn:
+            rval = conv_mkldnn.conv_forward(border_mode=border_mode, subsample=self.convstride, 
+                imshp=input_shape, kshp=filter_shape, uniq_id=uniq_id)(input, self.W, self.b)  
+                           
+            reluOp = relu_mkldnn.Relu(uniq_id=uniq_id)
+            self.output = reluOp(rval)
         else:
-            self.params = [self.W]
-            self.weight_types = ['W']
+            conved = T.nnet.conv2d(input, self.W,
+                                      input_shape, filter_shape,
+                                      subsample=self.convstride,
+                                      border_mode=border_mode,
+                                      filter_flip=flip_filters)
+            activation = conved + self.b.dimshuffle('x', 0, 'x', 'x')
+            self.output = T.nnet.relu(activation)
+          
+        self.params = [self.W, self.b]
+        self.weight_types = ['W', 'b']
         #print 'Conv2DLayer layer with input_shape: ' + str(input_shape) + ' filter_shape: ' + str(filter_shape)
         
     def conv_output_length(self, input_length, filter_size, stride, pad=0):
@@ -226,12 +203,13 @@ class Conv2DLayer(object):
                 for input, filter, stride, p
                 in zip(self.input_shape[2:], self.filter_size,
                        self.convstride, self.pad)))
-
         
 class MaxPool2DLayer(object):
     
-    def __init__(self, input, input_shape, pool_size=2, stride=None, pad=0, ignore_border=True):
-        
+    def __init__(self, input, input_shape, pool_size=2, stride=None, pad=0, ignore_border=True, mkldnn=False):
+        global uniq_id
+        uniq_id+=1      
+        #print 'max pool layer init ',uniq_id
         if stride is None:
             self.stride = pool_size
         else:
@@ -243,14 +221,17 @@ class MaxPool2DLayer(object):
         self.ignore_border = ignore_border
         self.stride = (self.stride,) * 2
         self.pad = (pad,) * 2
-        
-        self.output = pool_2d(input,
-                         ds=self.pool_size,
-                         st=self.stride,
-                         ignore_border=self.ignore_border,
-                         padding=self.pad,
-                         mode='max',
-                         )
+        if mkldnn:
+            poolOp = pool_mkldnn.Pool(ds=self.pool_size, st=self.stride, ignore_border=self.ignore_border, padding=self.pad, mode='max', uniq_id=uniq_id)
+            self.output = poolOp(self.input)
+        else:
+            self.output = pool_2d(input,
+                             ds=self.pool_size,
+                             st=self.stride,
+                             ignore_border=self.ignore_border,
+                             padding=self.pad,
+                             mode='max',
+                             )
                          
     def pool_output_length(self, input_length, pool_size, stride, pad, ignore_border):
         if input_length is None or pool_size is None:
@@ -290,12 +271,13 @@ class MaxPool2DLayer(object):
                                              ignore_border=self.ignore_border,
                                              )
         return tuple(output_shape)
-
         
 class AveragePool2DLayer(object):
     
-    def __init__(self, input, input_shape, pool_size=2, stride=None, pad=0, ignore_border=True):
-        
+    def __init__(self, input, input_shape, pool_size=2, stride=None, pad=0, ignore_border=True, mkldnn=False):
+        global uniq_id
+        uniq_id+=1     
+        #print 'max pool layer init ',uniq_id
         if stride is None:
             self.stride = pool_size
         else:
@@ -307,14 +289,17 @@ class AveragePool2DLayer(object):
         self.ignore_border = ignore_border
         self.stride = (self.stride,) * 2
         self.pad = (pad,) * 2
-        
-        self.output = pool_2d(input,
-                         ds=self.pool_size,
-                         st=self.stride,
-                         ignore_border=self.ignore_border,
-                         padding=self.pad,
-                         mode='average_exc_pad',
-                         )
+        if mkldnn:
+            poolOp = pool_mkldnn.Pool(ds=self.pool_size, st=self.stride, ignore_border=self.ignore_border, padding=self.pad, mode='average', uniq_id=uniq_id)
+            self.output = poolOp(input)            
+        else:
+            self.output = pool_2d(input,
+                             ds=self.pool_size,
+                             st=self.stride,
+                             ignore_border=self.ignore_border,
+                             padding=self.pad,
+                             mode='average_inc_pad',
+                             )
                          
     def pool_output_length(self, input_length, pool_size, stride, pad, ignore_border):
         if input_length is None or pool_size is None:
@@ -354,46 +339,58 @@ class AveragePool2DLayer(object):
                                              ignore_border=self.ignore_border,
                                              )
         return tuple(output_shape)
-
         
 class LocalResponseNormalization2DLayer(object):
-    def __init__(self, input, input_shape, alpha=1e-4, k=2, beta=0.75, n=5):
+    def __init__(self, input, input_shape, alpha=1e-4, k=1, beta=0.75, n=5, mkldnn=False):
+        global uniq_id
+        uniq_id+=1           
         self.input_shape = input_shape
         self.alpha = alpha
         self.k = k
         self.beta = beta
         self.n = n
-        if n % 2 == 0:
-            raise NotImplementedError("Only works with odd n")
-        input_shape = self.input_shape
-        if any(s is None for s in input_shape):
-            input_shape = input.shape
-        half_n = self.n // 2
-        input_sqr = T.sqr(input)
-        b, ch, r, c = input_shape
-        extra_channels = T.alloc(0., b, ch + 2*half_n, r, c)
-        input_sqr = T.set_subtensor(extra_channels[:, half_n:half_n+ch, :, :],
-                                    input_sqr)
-        scale = self.k
-        for i in range(self.n):
-            scale += self.alpha * input_sqr[:, i:i+ch, :, :]
-        scale = scale ** self.beta
-        self.output = input / scale
+        if mkldnn:
+            normOp = norm_lrn_mkldnn.NormAcrossMap(uniq_id=uniq_id, alpha=self.alpha, beta=self.beta, k=self.k, n=self.n)
+            self.output = normOp(input)
+        else:
+            if n % 2 == 0:
+                raise NotImplementedError("Only works with odd n")
+            input_shape = self.input_shape
+            if any(s is None for s in input_shape):
+                input_shape = input.shape
+            half_n = self.n // 2
+            input_sqr = T.sqr(input)
+            b, ch, r, c = input_shape
+            extra_channels = T.alloc(0., b, ch + 2*half_n, r, c)
+            input_sqr = T.set_subtensor(extra_channels[:, half_n:half_n+ch, :, :], input_sqr)
+            scale = self.k
+            for i in range(self.n):
+                scale += self.alpha * input_sqr[:, i:i+ch, :, :]
+            scale = scale ** self.beta
+            self.output = input / scale
               
     def get_output_shape_for(self):
         return self.input_shape
-
     
 class ConcatLayer(object):
-    def __init__(self, inputs, input_shapes, axis=1):
-	self.input_shapes = input_shapes
+    def __init__(self, inputs, input_shapes, axis=1,layer_count=0,mkldnn=False):
+        global uniq_id
+        uniq_id+=1    
+        self.input_shapes = input_shapes
         self.axis = axis
-        self.output = T.concatenate(inputs, axis=self.axis)
+        self.lc = layer_count
+        if mkldnn:
+            concat_op=concat3.JoinMKL4(axis = self.axis,uniq_id = uniq_id,lc= self.lc)    
+            self.output = concat_op(inputs[0],inputs[1],inputs[2],inputs[3])
+        else:
+            self.output = T.concatenate(inputs, axis=self.axis)
+
+
         
     def get_output_shape_for(self):
         output_shape = [next((s for s in sizes if s is not None), None)
                         for sizes in zip(*self.input_shapes)]
-
+	                    
         def match(shape1, shape2):
             return (len(shape1) == len(shape2) and
                     all(i == self.axis or s1 is None or s2 is None or s1 == s2
@@ -419,55 +416,50 @@ class GlobalPoolLayer(object):
     def get_output_shape_for(self):
         return self.input_shape[:2]
 
-
 class DenseLayer(object):
     
-    def __init__(self, input, input_shape, num_units, has_b=True, init_b=0):
+    def __init__(self, input, input_shape, num_units):
         self.input_shape = input_shape
         self.num_units = num_units
         num_input_channels = int(np.prod(self.input_shape[1:]))
         std = np.sqrt(2. / (num_input_channels + self.num_units))
-        np_values = np.asarray(
-                rng.uniform(low=-std, high=std, size=(num_input_channels, self.num_units)), dtype=theano.config.floatX)
+        np_values = np.asarray(rng.uniform(low=-std, high=std, size=(num_input_channels, self.num_units)), dtype=theano.config.floatX)
         self.W = theano.shared(value=np_values)
-
-        if has_b:
-            b_values = np.zeros((self.num_units,), dtype=theano.config.floatX)
-            if init_b:
-                b_values.fill(init_b)
-            self.b = theano.shared(value=b_values)
+        b_values = np.zeros((self.num_units,), dtype=theano.config.floatX)
+        b_values.fill(0.2)
+        self.b = theano.shared(value=b_values)
         
         if input.ndim > 2:
             input = input.flatten(2)
             #print input.ndim
         activation = T.dot(input, self.W)
-
-        if has_b:
-            activation = activation + self.b.dimshuffle('x', 0)
-
+        activation = activation + self.b.dimshuffle('x', 0)
         self.output = T.nnet.relu(activation)
-
-        if has_b:
-            self.params = [self.W, self.b]
-            self.weight_types = ['W', 'b']
-        else:
-            self.params = [self.W]
-            self.weight_types = ['W']
+        self.params = [self.W, self.b]
+        self.weight_types = ['W', 'b']
         
     def get_output_shape_for(self):
         return (self.input_shape[0], self.num_units)
-
         
 class FlattenLayer(object):
     
     def __init__(self, input, input_shape):
+        global uniq_id
+        uniq_id+=1  
         self.input_shape = input_shape
         self.num_input_channels = int(np.prod(self.input_shape[1:]))
-
-        if input.ndim > 2:
-            self.output = input.flatten(2)
+        if True:
+            if input.ndim > 2:
+                self.output = input.flatten(2)
+            else:
+                self.output = input
         else:
-            self.output = input
-  
+            if input.ndim > 2:
+                i2uOp = conversionOp.I2U(uniq_name=str(uniq_id))
+                i2uout = i2uOp(input)
+                self.output = i2uout.flatten(2)
+            else:
+                self.output = input
+
     def get_output_shape_for(self):
         return (self.input_shape[0], self.num_input_channels)

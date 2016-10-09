@@ -215,7 +215,7 @@ def make_loop(loop_orders, dtypes, loop_tasks, sub, openmp=None):
                 suitable_n = "%(var)s_n%(index)s" % locals()
         if openmp:
             openmp_elemwise_minsize = theano.config.openmp_elemwise_minsize
-            forloop = """#pragma omp parallel for if( %(suitable_n)s >=%(openmp_elemwise_minsize)s)\n""" % locals()
+            forloop = """#pragma omp parallel for simd schedule(static) if( %(suitable_n)s >=%(openmp_elemwise_minsize)s)\n""" % locals()
         else:
             forloop = ""
         forloop += """for (int %(iterv)s = 0; %(iterv)s<%(suitable_n)s; %(iterv)s++)""" % locals()
@@ -405,10 +405,11 @@ def make_reordered_loop(init_loop_orders, olv_index, dtypes, inner_task, sub,
         # The pointers are defined only in the most inner loop
         if i == nnested - 1:
             update = pointer_update
+            forloop += """#pragma omp simd\n"""
         if i == 0:
             if openmp:
                 openmp_elemwise_minsize = theano.config.openmp_elemwise_minsize
-                forloop += """#pragma omp parallel for if( %(total)s >=%(openmp_elemwise_minsize)s)\n""" % locals()
+                forloop += """#pragma omp parallel for schedule(static) if( %(total)s >=%(openmp_elemwise_minsize)s)\n""" % locals()
         forloop += "for(int %(iterv)s = 0; %(iterv)s<%(total)s; %(iterv)s++)" % locals()
 
         loop = """
@@ -464,7 +465,7 @@ def make_reordered_loop(init_loop_orders, olv_index, dtypes, inner_task, sub,
 ################
 
 
-def make_loop_careduce(loop_orders, dtypes, loop_tasks, sub, flag=0):
+def make_loop_careduce(loop_orders, dtypes, loop_tasks, sub):
     """
     Make a nested loop over several arrays and associate specific code
     to each level of nesting.
@@ -490,7 +491,7 @@ def make_loop_careduce(loop_orders, dtypes, loop_tasks, sub, flag=0):
 
     """
 
-    def loop_over(preloop, code, indices, i, flag):
+    def loop_over(preloop, code, indices, i):
         iterv = 'ITER_%i' % i
         update = ""
         suitable_n = "1"
@@ -499,21 +500,9 @@ def make_loop_careduce(loop_orders, dtypes, loop_tasks, sub, flag=0):
             update += "%(var)s_iter += %(var)s_jump%(index)s_%(i)s;\n" % locals()
             if index != 'x':
                 suitable_n = "%(var)s_n%(index)s" % locals()
-        if flag == 1:
-            ccode = """
-                     %(preloop)s
-                    """ % locals()
-            if i == 0:
-                ccode += """\n#pragma omp parallel for"""
-            ccode += """
-                    for (int %(iterv)s = 0; %(iterv)s<%(suitable_n)s; %(iterv)s++) {//SMG
-                        %(code)s
-                    }
-                    """ % locals()
-            return ccode
         return """
         %(preloop)s
-        for (int %(iterv)s = 0; %(iterv)s < %(suitable_n)s; %(iterv)s++) {
+        for (int %(iterv)s = %(suitable_n)s; %(iterv)s; %(iterv)s--) {
             %(code)s
             %(update)s
         }
@@ -535,7 +524,7 @@ def make_loop_careduce(loop_orders, dtypes, loop_tasks, sub, flag=0):
     else:
         s = ""
         for i, (pre_task, task), indices in reversed(list(zip(xrange(len(loop_tasks) - 1), loop_tasks, list(zip(*loop_orders))))):
-            s = loop_over(preloops.get(i, "") + pre_task, s + task, indices, i, flag)
+            s = loop_over(preloops.get(i, "") + pre_task, s + task, indices, i)
 
     s += loop_tasks[-1]
     return "{%s}" % s
