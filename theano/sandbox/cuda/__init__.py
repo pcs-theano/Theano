@@ -269,9 +269,11 @@ from theano.sandbox.cuda.type import CudaNdarrayType
 
 
 def dnn_available():
-    if config.dnn.enabled == "False":
+    #if config.dnn.enabled == "mkl" or config.dnn.enabled == "mkldnn":
+    if config.dnn.enabled == "mkl":
         dnn_available.avail = False
         dnn_available.msg = "Disabled by dnn.enabled flag"
+        return dnn_available.avail
     if dnn_available.avail is None and not cuda_available:
         dnn_available.msg = "CUDA not available"
         dnn_available.avail = False
@@ -341,7 +343,7 @@ def dnn_available():
                     raise RuntimeError(dnn_available.msg)
                 else:
                     dnn_available.avail = comp
-    if config.dnn.enabled == "True":
+    if config.dnn.enabled == "cudnn":
         if not dnn_available.avail:
             raise RuntimeError(
                 "You enabled cuDNN, but we aren't able to use it: %s" %
