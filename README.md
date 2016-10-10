@@ -5,21 +5,34 @@ This repo is dedicated to improving Theano performance when running on CPU, in p
 
 Please refer to the document [Install_Guide.pdf](https://github.com/intel/theano/blob/master/Install_Guide.pdf) for the installation guide.
 
-* Branch **pcs-theano** includes the optimized codes based on Theano version 0.8.0rc1, get and install it via below commands:
-```
-git clone -b pcs-theano https://github.com/intel/theano.git pcs-theano
-cd pcs-theano
-python setup.py build 
-python setup.py install
-```
-* Branch **master** includes the optimized codes based on Theano version 0.9.0dev1.
+* Branch **master** is a general optimized version based on 0.9.0dev1, get and install it via below commands:
 ```
 git clone https://github.com/intel/theano.git pcs-theano
 cd pcs-theano
 python setup.py build 
-python setup.py install
+python setup.py install --user
 ```
-We also provide an optimized Numpy and some benchmarks/demo cases, you can find optimized Numpy in [here](https://github.com/pcs-theano/numpy), demo cases in [here](https://github.com/intel/theano/democase).
+* Branch **pcs-theano** is a general optimized codes based on 0.8.0rc1, get and install it via below commands:
+```
+git clone -b pcs-theano https://github.com/intel/theano.git pcs-theano
+cd pcs-theano
+python setup.py build 
+python setup.py install --user
+```
+* Branch **mkl** is a special optimized version for CNN topologies which requires Intel® Math Kernel Library (Intel® MKL, after version 2017.0.0) based on 0.9.0dev1, get and install it via below commands:
+```
+git clone -b mkl https://github.com/intel/theano.git pcs-theano
+cd pcs-theano
+python setup.py build 
+python setup.py install --user
+```
+
+Theano config files:
+
+	* replace "~/.theanorc" with "pcs-theano/theanorc_icc" for ICPC compiler 
+	* replace "~/.theanorc" with "pcs-theano/theanorc_gcc" for G++ compiler
+
+We also provide an optimized Numpy and some demo cases, you can find optimized Numpy in [here](https://github.com/pcs-theano/numpy), and demo cases in Theano's root directory.
  
 
 #Theano
