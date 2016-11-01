@@ -88,6 +88,9 @@ def googlenet_train(train_batch_size=32, val_batch_size=50, image_size=(3, 224, 
 
             ###validation		 
             if (iter+1) % (4*n_train_batches) == 0:
+                values = get_params(trainning_model.params)
+                load_params(validating_model.params, values)
+
                 validation_erorrs = []
                 validating_model.set_dropout_off()
 
