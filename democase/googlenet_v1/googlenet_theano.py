@@ -288,11 +288,7 @@ class googlenet(object):
         net['i2u'] = i2uout
         all_output['i2u'] = i2uout
         
-
-        net['flatten'] = FlattenLayer(i2uout, output_shape)
-        output_shape = net['flatten'].get_output_shape_for()
-
-        net['dropout'] = DropoutLayer(net['flatten'].output, output_shape, prob_drop=0.4)
+        net['dropout'] = DropoutLayer(i2uout, output_shape, prob_drop=0.4)
         output_shape = net['dropout'].get_output_shape_for() 
         
         net['loss3/classifier'] = SoftmaxLayer(net['dropout'].output, output_shape, 1000)

@@ -23,15 +23,18 @@ python setup.py install --user
 ```
 git clone -b mkl https://github.com/intel/theano.git pcs-theano
 cd pcs-theano
+source get_self_contained_mkl.sh 1    #download self_contained mkl
 python setup.py build 
 python setup.py install --user
 ```
 
-Theano config files:
+Update Theano configuration based on the Compiler and BLAS:
 
-	* replace "~/.theanorc" with "pcs-theano/theanorc_icc" for ICPC compiler 
-	* replace "~/.theanorc" with "pcs-theano/theanorc_gcc" for G++ compiler
+	* replace "~/.theanorc" with "pcs-theano/theanorc_icc_mkl" for ICPC compiler and MKL
+	* replace "~/.theanorc" with "pcs-theano/theanorc_gcc_mkl" for G++ compiler and MKL
+	* replace "~/.theanorc" with "pcs-theano/theanorc_gcc_openblas" for G++ compiler and OpenBLAS
 
+You can get the self-contained MKL from [here](https://github.com/01org/mkl-dnn/releases).
 We also provide an optimized Numpy and some demo cases, you can find optimized Numpy in [here](https://github.com/pcs-theano/numpy), and demo cases in Theano's root directory.
  
 

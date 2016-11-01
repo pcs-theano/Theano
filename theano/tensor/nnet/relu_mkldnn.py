@@ -96,10 +96,13 @@ class Relu(Op):
         """
 
     def c_headers(self):
-        return ['<math.h>','<iostream>'] 
+        return ['<math.h>','<iostream>']
+
+    def c_lib_dirs(self):
+        return ldflags(libs=False, libs_dir=True)
 
     def c_libraries(self):
-        return ['mkl_rt'] 
+        return ldflags()
 
     def c_code(self, node, name, inp, out, sub):
         x, = inp
@@ -195,7 +198,6 @@ class Relu(Op):
                 std::cout<<"input size: "<<sizes[3]<<" x "<<sizes[2]<<" x "<<sizes[1]<<" x "<<sizes[0]<<std::endl;
                 std::cout<<"relu forward: input size in bytes: "<<img_size<<", output size in bytes: "<<out_size<<std::endl;
             #endif
-
 	    if (NULL == output_buffer_ptr) {
                 e = dnnAllocateBuffer_F32(&output_buffer_ptr, fwd_top_data_int_l);
                 if (E_SUCCESS != e){
@@ -228,7 +230,6 @@ class Relu(Op):
     def c_code_cache_version(self):
         return (0, 1, self.uniq_id)
 
-
 class ReluGrad(Op):
     """
     Grad Function of NormAcrossMap		
@@ -254,9 +255,10 @@ class ReluGrad(Op):
     	return (hash(type(self)) ^ hash(self.slope) ^ hash(self.uniq_id))
 
     def c_headers(self):
-        return ['<math.h>','<mkl.h>'] 
+        return ['<math.h>'] 
+
     def c_support_code(self):
-        return """
+        return mkldnn_helper.mkldnn_header_text()+"""
         #define __DEBUG__ 0
         static int first_run = 1;
         static int count = 0;
@@ -297,8 +299,11 @@ class ReluGrad(Op):
         dnnReleaseBuffer_F32(output_buffer_ptr);
         """
 
+    def c_lib_dirs(self):
+        return ldflags(libs=False, libs_dir=True)
+
     def c_libraries(self):
-        return ['mkl_rt']
+        return ldflags()
 
     def make_node(self, x, gz):
         assert isinstance(x, Variable) and x.ndim == 4

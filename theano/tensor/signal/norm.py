@@ -4,6 +4,7 @@ import sys
 import numpy
 import theano
 from theano import gof, Op, tensor, Variable, Apply
+from theano.tensor.blas import ldflags
 
 
 class NormAcrossMap(Op):
@@ -111,7 +112,7 @@ class NormAcrossMap(Op):
         return ['<math.h>','<mkl.h>']  ##FIXME
 
     def c_libraries(self):
-        return ['mkl_rt']  ##FIXME, what if user don't have mkl?
+        return ldflags()
 
     def c_code(self, node, name, inp, out, sub):
         x, = inp
@@ -261,7 +262,7 @@ class NormAcrossMapGrad(Op):
         return ['<math.h>','<mkl.h>'] ##FIXME
 
     def c_libraries(self):
-        return ['mkl_rt'] ##FIXME
+        return ldflags()
 
     def make_node(self, x, LrnOut, scale, gz):
         assert isinstance(x, Variable) and x.ndim == 4

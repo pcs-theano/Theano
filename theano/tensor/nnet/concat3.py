@@ -3,6 +3,8 @@ import theano
 from theano.gof import Apply,HideC
 from theano import gof
 from theano.tensor.basic import Join, Split
+from theano.tensor.nnet import mkldnn_helper
+from theano.tensor.blas import ldflags
 
 class JoinMKL4(gof.Op):
     """
@@ -37,16 +39,22 @@ class JoinMKL4(gof.Op):
         return (1,0,hash(self.uniq_id))
 
     def c_headers(self):
-        return ['mkl.h']
+        return super(JoinMKL4, self).c_headers()
+
+    def c_lib_dirs(self):
+        return ldflags(libs=False, libs_dir=True)
 
     def c_libraries(self):
-        return ['mkl_rt']
+        return ldflags()
 
     def c_compile_args(self):
-        return ['-O3']
+        compile_args = ldflags(libs=False, flags=True)
+        compile_args += super(JoinMKL4, self).c_compile_args()
+        return compile_args
 
     def c_support_code(self):
-        final_code = """
+        final_code = mkldnn_helper.mkldnn_header_text()
+        final_code += """
                //#define _DEBUG_
                static dnnPrimitive_t pConcat = NULL;
                static void* internal_ptr = NULL;
@@ -244,16 +252,22 @@ class JoinMKLGrad4(gof.Op):
         return (1,0,hash(self.uniq_id))
 
     def c_headers(self):
-        return ['mkl.h']
+        return super(JoinMKLGrad4, self).c_headers()
+
+    def c_lib_dirs(self):
+        return ldflags(libs=False, libs_dir=True)
 
     def c_libraries(self):
-        return ['mkl_rt']
+        return ldflags()
 
     def c_compile_args(self):
-        return ['-O3']
+        compile_args = ldflags(libs=False, flags=True)
+        compile_args += super(JoinMKLGrad4, self).c_compile_args()
+        return compile_args
 
     def c_support_code(self):
-        final_code = """
+        final_code = mkldnn_helper.mkldnn_header_text()
+        final_code += """
                //#define _DEBUG_
                static dnnPrimitive_t pSplit = NULL;
                static void *concat_res[dnnResourceNumber];

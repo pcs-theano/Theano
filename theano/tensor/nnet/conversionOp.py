@@ -2,6 +2,8 @@ from theano.tensor import as_tensor_variable, TensorType
 import theano
 from theano.gof import Apply
 from theano import gof
+from theano.tensor.blas import ldflags
+from theano.tensor.nnet import mkldnn_helper
 
 class U2I(gof.Op):
     def __init__(self,Op, target, params, uniq_name=None):
@@ -31,13 +33,18 @@ class U2I(gof.Op):
         return (1,0, hash(self.uniq_name))
 
     def c_headers(self):
-        return ['mkl.h']
+        return super(U2I, self).c_headers()
+
+    def c_lib_dirs(self):
+        return ldflags(libs=False, libs_dir=True)
 
     def c_libraries(self):
-        return ['mkl_rt']
+        return ldflags()
 
     def c_compile_args(self):
-        return ['-O3']
+        compile_args = ldflags(libs=False, flags=True)
+        compile_args += super(U2I, self).c_compile_args()
+        return compile_args
 
     def grad(self, inp, grads):
         x, = inp
@@ -46,7 +53,8 @@ class U2I(gof.Op):
         #return [I2U()(gz)]
 
     def c_support_code(self):
-        final_code = """
+        final_code = mkldnn_helper.mkldnn_header_text()
+        final_code += """
                 //    #define _DEBUG_ 
                     static void* internal_ptr = NULL; //mkl_dnn data buffer
                     static dnnLayout_t layout_int = NULL;
@@ -454,20 +462,26 @@ class U2IGrad(gof.Op):
         return (1,0, hash(self.uniq_name))
 
     def c_headers(self):
-        return ['mkl.h']
+        return super(U2IGrad, self).c_headers()
+
+    def c_lib_dirs(self):
+        return ldflags(libs=False, libs_dir=True)
 
     def c_libraries(self):
-        return ['mkl_rt']
+        return ldflags()
 
     def c_compile_args(self):
-        return ['-O3']
+        compile_args = ldflags(libs=False, flags=True)
+        compile_args += super(U2IGrad, self).c_compile_args()
+        return compile_args
 
     def make_node(self, x, gz):
         out = x.type()
         return gof.Apply(self,[x, gz],[out])
 
     def c_support_code(self):
-        return """
+        ccode = mkldnn_helper.mkldnn_header_text()
+        ccode += """
          //#define _DEBUG_
          static void* internal_ptr = NULL;
          static void* usr_ptr = NULL;
@@ -477,6 +491,8 @@ class U2IGrad(gof.Op):
          static dnnPrimitive_t FilterFwd = NULL;
          void *convert_resources[dnnResourceNumber];
          """
+        return ccode
+
 
     def c_cleanup_code_struct(self,node, name):
         d={}
@@ -639,13 +655,18 @@ class I2U(gof.Op):
         return (1,0, hash(self.uniq_name))
 
     def c_headers(self):
-        return ['mkl.h']
+        return super(I2U, self).c_headers()
+
+    def c_lib_dirs(self):
+        return ldflags(libs=False, libs_dir=True)
 
     def c_libraries(self):
-        return ['mkl_rt']
+        return ldflags()
 
     def c_compile_args(self):
-        return ['-O3']
+        compile_args = ldflags(libs=False, flags=True)
+        compile_args += super(I2U, self).c_compile_args()
+        return compile_args
 
     def make_node(self, x):
         out = x.type()
@@ -657,7 +678,8 @@ class I2U(gof.Op):
         return [I2UGrad(self.uniq_name)(x, gz)]
 
     def c_support_code(self):
-        return """ 
+        ccode = mkldnn_helper.mkldnn_header_text()
+        ccode += """ 
         // #define _DEBUG_
          static void* internal_ptr = NULL;
          static dnnLayout_t layout_int = NULL;
@@ -665,6 +687,7 @@ class I2U(gof.Op):
          static dnnPrimitive_t convert_from_int = NULL;
          void *convert_resources[dnnResourceNumber];
          """
+        return ccode
 
     def c_cleanup_code_struct(self,node, name):
         d={}
@@ -834,20 +857,26 @@ class I2UGrad(gof.Op):
         return (1,0,hash(self.uniq_id))
 
     def c_headers(self):
-        return ['mkl.h']
+        return super(I2UGrad, self).c_headers()
+
+    def c_lib_dirs(self):
+        return ldflags(libs=False, libs_dir=True)
 
     def c_libraries(self):
-        return ['mkl_rt']
+        return ldflags()
 
     def c_compile_args(self):
-        return ['-O3']
+        compile_args = ldflags(libs=False, flags=True)
+        compile_args += super(I2UGrad, self).c_compile_args()
+        return compile_args
 
     def make_node(self,x,gz):
         out = x.type()
         return gof.Apply(self,[x, gz],[out])
 
     def c_support_code(self):
-        return """
+        ccode = mkldnn_helper.mkldnn_header_text()
+        ccode += """
          ///#define _DEBUG_
          static void* internal_ptr = NULL;
          static dnnLayout_t layout_int = NULL;
@@ -855,6 +884,7 @@ class I2UGrad(gof.Op):
          static dnnPrimitive_t convert_to_int = NULL;
          void *convert_resources[dnnResourceNumber];
          """
+        return ccode
 
     def c_cleanup_code_struct(self,node, name):
         d={}
