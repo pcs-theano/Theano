@@ -68,7 +68,7 @@ else
     DST=$(cd `dirname $0`; pwd)
 fi
 OMP=0 
-VERSION_MATCH=20160923
+VERSION_MATCH=20160706
 ARCHIVE_BASENAME=mklml_lnx_2017.0.1.20161005.tgz
 MKL_CONTENT_DIR=`echo $ARCHIVE_BASENAME | rev | cut -d "." -f 2- | rev`
 GITHUB_RELEASE_TAG=self_containted_MKLGOLD
@@ -82,18 +82,19 @@ if [ -z $MKLROOT ] || [ $VERSION_LINE -lt $VERSION_MATCH ]; then
     # ..if MKLROOT is not set then check if we have MKL downloaded in proper version
     VERSION_LINE=`GetVersionName $MKL_CONTENT_DIR`
     if [ $VERSION_LINE -lt $VERSION_MATCH ] ; then
-      #...If it is not then downloaded and unpacked
-      wget --no-check-certificate -q -P $DST $MKLURL -O $DST/$ARCHIVE_BASENAME
-      tar -xzf $PWD/$ARCHIVE_BASENAME -C $PWD
+        #...If it is not then downloaded and unpacked
+        wget --no-check-certificate  -P $PWD $MKLURL -O $PWD/$ARCHIVE_BASENAME
+        tar -xzf $PWD/$ARCHIVE_BASENAME -C $PWD
     fi
-  #FindLibrary $1
-  #MKL_ROOT=$PWD/`echo $LOCALMKL | sed -e 's/lib.*$//'`
+    LOCALMKL=`find $PWD -name libmklml_intel.so`
+    MKL_ROOT=`echo $LOCALMKL | sed -e 's/lib.*$//'`
+elif [ ! -z "$MKLROOT" ]; then
+    LOCALMKL=`find $MKLROOT -name libmklml_intel.so`
+    MKL_ROOT=`echo $LOCALMKL | sed -e 's/lib.*$//'`
 fi
 
-FindLibrary $1
-MKL_ROOT=`echo $LOCALMKL | sed -e 's/lib.*$//'`
 # Check what MKL lib we have in MKLROOT
-if [ -z `find $MKL_ROOT -name libmkl_rt.so -print -quit` ] || [ ! -z $LOCALMKL]; then
+if [ -z `find $MKL_ROOT -name libmkl_rt.so -print -quit` ] || [ ! -z "$LOCALMKL"]; then
   LIBRARIES=`basename $LOCALMKL | sed -e 's/^.*lib//' | sed -e 's/\.so.*$//'`
   OMP=1
 else
@@ -101,7 +102,7 @@ else
 fi 
 
 # Output MKLROOT, LIBRARY, OMP
-if [ -z $MKLROOT ] || [ $MKLROOT != $MKL_ROOT ]; then
+if [ -z $MKLROOT ] || [ "$MKLROOT" != "$MKL_ROOT" ]; then
     echo "export MKLROOT=$MKL_ROOT" >> ~/.bashrc
     export MKLROOT=$MKL_ROOT
 fi
