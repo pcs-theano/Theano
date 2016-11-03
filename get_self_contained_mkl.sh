@@ -93,13 +93,20 @@ elif [ ! -z "$MKLROOT" ]; then
     MKL_ROOT=`echo $LOCALMKL | sed -e 's/lib.*$//'`
 fi
 
-# Check what MKL lib we have in MKLROOT
-if [ -z `find $MKL_ROOT -name libmkl_rt.so -print -quit` ] || [ ! -z "$LOCALMKL"]; then
-  LIBRARIES=`basename $LOCALMKL | sed -e 's/^.*lib//' | sed -e 's/\.so.*$//'`
-  OMP=1
+# If no libmklml_intel.so, search for libmkl_rt.so under MKLROOT
+# Maybe there has several libmkl_rt.so, add -print -quit options to get the first
+if [ -z "$LOCALMKL" ]; then
+    LOCALMKL=`find $MKLROOT -name libmkl_rt.so -print -quit`
+    MKL_ROOT=`echo $LOCALMKL | sed -e 's/lib.*$//'`
+fi
+
+if [ ! -z "$LOCALMKL" ]; then
+    LIBRARIES=`basename $LOCALMKL | sed -e 's/^.*lib//' | sed -e 's/\.so.*$//'`
+    OMP=1
 else
-  LIBRARIES="mkl_rt"
-fi 
+    LIBRARIES="mkl_rt"
+    MKL_ROOT=$MKLROOT
+fi
 
 # Output MKLROOT, LIBRARY, OMP
 if [ -z $MKLROOT ] || [ "$MKLROOT" != "$MKL_ROOT" ]; then
