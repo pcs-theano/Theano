@@ -129,16 +129,16 @@ def mkl_available():
                 else:
                     mkl_available.avail = comp
 
-    if config.dnn.enabled == "mkl"
+    if config.dnn.enabled == "mkl":
         if not mkl_available.avail:
             raise NotImplemented(
-                "mkl-dnn is not supported, %s" mkl_available.msg)
+                "mkl is not supported, %s" % mkl_available.msg)
 
     ## leave mkl-dnn here for future use
     if config.dnn.enabled == "mkl-dnn":
         if not mkl_available.avail:
             raise NotImplemented(
-                "mkl-dnn is not supported, %s" mkl_available.msg)
+                "mkl-dnn is not supported, %s" % mkl_available.msg)
     return mkl_available.avail
 
 mkl_available.avail = None

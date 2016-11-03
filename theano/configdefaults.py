@@ -385,7 +385,7 @@ AddConfigVar('dnn.enabled',
              " When device is NOT GPU/CUDA, use cuDNN if it's available,"
              " but silently fall back to not using it if not present."
              " 'cudnn',  use cuDNN and raise an error if cuDNN can not be used."
-             " 'mkl',  use mkl and raise an error if mkl can not be used."
+             " 'mkl',  use mkl and raise an error if mkl can not be used.",
              # leave mkl-dnn here for future use.
              #" 'mkl-dnn',  use mkl-dnn and raise an error if mkl-dnn can not be used."
              #EnumStr("auto", "cudnn", "mkl", "mkl-dnn"),
