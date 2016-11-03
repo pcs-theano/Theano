@@ -10,5 +10,3 @@ openmp = True
 openmp_elemwise_minsize = 10
 [gcc]
 cxxflags = -qopenmp -march=native -O3  -qopt-report=3 -fno-alias -qopt-prefetch=2 -fp-trap=none
-[blas]
-ldflags = -lmklml_intel -liomp5

@@ -110,6 +110,15 @@ fi
 
 # Output MKLROOT, LIBRARY, OMP
 if [ -z $MKLROOT ] || [ "$MKLROOT" != "$MKL_ROOT" ]; then
+    ### ld library here temporary
+    echo "[blas]" >> ~/.theanorc
+    if [ "$LIBRARIES" != "mkl_rt" ]; then
+        echo "ldflags = -l$LIBRARIES -L$MKL_ROOT/lib" >> ~/.theanorc
+    else
+        echo "ldflags = -lmkl_rt" >> ~/.theanorc
+    fi
+
+    ###
     echo "export MKLROOT=$MKL_ROOT" >> ~/.bashrc
     export MKLROOT=$MKL_ROOT
 fi

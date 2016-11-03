@@ -9,5 +9,3 @@ mode = FAST_RUN
 openmp = True
 [gcc]
 cxxflags = -fopenmp -O3 -opt-prefetch=2 -funroll-loops
-[blas]
-ldflags = -lmklml_intel -liomp5
