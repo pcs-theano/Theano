@@ -6,6 +6,7 @@
 
 from __future__ import absolute_import, print_function, division
 import os
+import sys
 import subprocess
 import codecs
 from fnmatch import fnmatchcase
@@ -149,8 +150,36 @@ if not release:
     write_text(filename, text)
 
 
+def prepare_mkl():
+    result = []
+    if os.path.exists('get_self_contained_mkl.sh'):
+        result = os.popen('bash get_self_contained_mkl.sh').readlines()
+
+    if len(result) >= 3:
+        MKLROOT = result[-3].strip('\n')
+        LIBRARY = result[-2].strip('\n')
+        OMP = result[-1].strip('\n')
+    
+    print('MKLROOT %s' %MKLROOT)
+    print('LIBRARY %s' %LIBRARY)
+    print('OMP %s' %OMP)
+    if len(MKLROOT) != 0 and MKLROOT != os.environ['MKLROOT']:
+        os.environ['MKLROOT'] = MKLROOT
+
+
+def parse_setup_commands():
+    if '--mkl' in sys.argv:
+        print('Prepare MKL..')
+        index = sys.argv.index('--mkl')
+        prepare_mkl()
+        sys.argv.pop(index)
+
+
 def do_setup():
     write_version_py()
+
+    parse_setup_commands()
+
     setup(name=NAME,
           version=VERSION,
           description=DESCRIPTION,
@@ -181,5 +210,7 @@ def do_setup():
               'numpy', 'gpu', 'autodiff', 'differentiation'
           ]),
     )
+
+
 if __name__ == "__main__":
     do_setup()
