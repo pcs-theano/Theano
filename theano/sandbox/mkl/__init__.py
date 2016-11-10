@@ -1,11 +1,9 @@
 from __future__ import absolute_import, print_function, division
 import logging
-import os
-import sys
 import textwrap
 
 import theano
-from theano import config, gof 
+from theano import config, gof
 from six import integer_types
 from theano.tensor.blas import ldflags
 from theano.gof.cmodule import Compiler
@@ -18,12 +16,13 @@ _logger = logging.getLogger(_logger_name)
 # is not found on the platform
 mkl_available = True
 
+
 class MKLVersion(gof.Op):
     def c_headers(self):
-        return super(MKLVersion, self).c_headers()                          
+        return super(MKLVersion, self).c_headers()
 
     def c_libraries(self):
-        return ldflags() 
+        return ldflags()
 
     def make_node(self):
         return gof.Apply(self, [], [gof.Generic()()])
@@ -65,16 +64,22 @@ mkl_version.v = None
 
 def mkl_available():
     if config.dnn.enabled == "cudnn":
-        mkl_available.avail = False
-        mkl_available.msg = "Disabled by dnn.enabled flag"
-        return mkl_available.avail
-    
+        if config.device == "cpu":
+            mkl_available.avail = None
+            config.dnn.enabled = "auto"
+            print ('WARNING: when device is cpu, config.dnn.enabled=cudnn is not supported, '
+                   'Swithch to "auto" flag.')
+        else:
+            mkl_available.avail = False
+            mkl_available.msg = "Disabled by dnn.enabled flag"
+            return mkl_available.avail
+
     if config.dnn.enabled == "auto" and config.device != "cpu":
         mkl_available.avail = False
         mkl_available.msg = "MKL is disabled since device is not CPU"
         return mkl_available.avail
 
-    if mkl_available.avail == None:
+    if mkl_available.avail is None:
         preambule = """
             #include <stdio.h>
         """
@@ -86,13 +91,12 @@ def mkl_available():
             dnnLayout_t usr_layout = NULL;
             size_t size[1] = {256};
             size_t stride[1] = {1};
-            
+
             if ((err = dnnLayoutCreate_F32(&usr_layout, 1, size, stride)) != E_SUCCESS) {
                 fprintf(stderr, "Failed to create user layout with mkl: %s", err);
                 return (-1);
             }
             """)
-        path_wrapper = "\"" if os.name =='nt' else ""
         params = ["-l", "mkl_rt"]
 
         # Do not run here the test program. It would run on the
@@ -115,9 +119,9 @@ def mkl_available():
                 mkl_available.avail = False
                 mkl_available.msg = ("Got incorrect mkl version format")
                 raise RuntimeError(mkl_available.msg)
-            if v == -1 or v < 20160701:  #FIXME, check the version for first mkl primitive
+            if v == -1 or v < 20160701:  # FIXME, check the version for first mkl primitive
                 mkl_available.avail = False
-                mkl_available.msg = "Version(%d) is too old, please update the newer one after version %d." % (v, int(20160701)) #FIXME, check the version for the first mkl primitive
+                mkl_available.msg = "Version(%d) is too old, please update the newer one after version %d." % (v, int(20160701))  # FIXME, check the version for the first mkl primitive
                 raise RuntimeError(mkl_available.msg)
             else:
                 mkl_available.avail = comp
