@@ -664,7 +664,14 @@ default_colorCodes = {'GpuFromHost': 'red',
                       'Elemwise': '#FFAABB',  # dark pink
                       'Subtensor': '#FFAAFF',  # purple
                       'Alloc': '#FFAA22',  # orange
-                      'Output': 'blue'}
+                      'Output': 'blue',
+                      'U2I_Pool': '#FF8000',
+                      'U2I_Relu': '#FF8000',
+                      'U2I_Conv': '#FF8000',
+                      'U2I_LRN': '#FF8000',
+                      'U2IGrad': '#FF8000',
+                      'I2U': '#FF8000',
+                      }
 
 
 def pydotprint(fct, outfile=None,

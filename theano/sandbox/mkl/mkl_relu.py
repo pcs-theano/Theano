@@ -51,10 +51,10 @@ class Relu(Op):
     def grad(self, inp, grads):
         x, = inp
         gz, = grads
-        return [ReluGrad(uniq_id=self.uniq_id, slope=self.slope)(x, gz)]
+        return [ReluGrad(slope=self.slope, uniq_id=self.uniq_id)(x, gz)]
 
     def c_support_code(self):
-        return mkldnn_helper.mkldnn_header_text()+"""
+        return mkl_helper.header_text()+"""
         static int first_run = 1;
         static int count = 0;
         static int typenum;
@@ -258,7 +258,7 @@ class ReluGrad(Op):
         return ['<math.h>'] 
 
     def c_support_code(self):
-        return mkldnn_helper.mkldnn_header_text()+"""
+        return mkl_helper.header_text()+"""
         #define __DEBUG__ 0
         static int first_run = 1;
         static int count = 0;

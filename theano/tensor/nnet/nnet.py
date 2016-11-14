@@ -2231,6 +2231,47 @@ def relu(x, alpha=0):
         return f1 * x + f2 * abs(x)
 
 
+class Relu(gof.Op):
+    __props__ = ('slope',)
+    def __init__(self, slope=1):
+        self.slope = slope
+
+    def make_node(self, x):
+        if x.type.ndim != 4:
+            raise TypeError()
+        x = tensor.as_tensor_variable(x)
+        return gof.Apply(self, [x], [x.type()])
+
+    def grad(self, inp, grads):
+        x, = inp
+        gz, = grads
+        return [ReluGrad(slope=self.slope)(x, gz)]
+
+    def perform(self, node, inp, out_):
+        x, = inp
+        z, = out_
+        
+        z = relu(x, self.slope)
+
+
+class ReluGrad(gof.Op):
+    __props__ = ('slope',)
+    def __init__(self, slope=1):
+        self.slope = slope
+
+    def make_node(self, x, gz):
+        if x.type.ndim != 4:
+            raise TypeError()
+        x = tensor.as_tensor_variable(x)
+        return gof.Apply(self, [x, gz], [x.type()])
+
+    def perform(self, node, inp, out_):
+        x, gz = inp
+        gx, = out_
+        
+        gx = gz
+
+
 def h_softmax(x, batch_size, n_outputs, n_classes, n_outputs_per_class,
               W1, b1, W2, b2, target=None):
     """ Two-level hierarchical softmax.
