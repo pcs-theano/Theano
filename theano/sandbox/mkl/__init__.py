@@ -9,6 +9,30 @@ from theano.tensor.blas import ldflags
 from theano.gof.cmodule import Compiler
 from theano.sandbox.mkl import mkl_helper
 
+# Patric:
+from theano.compat import get_unbound_function
+from theano.compile import optdb
+from theano.gof import EquilibriumDB, SequenceDB
+from theano.gof.cmodule import get_lib_extension
+
+# Init OPT for mkl
+mkl_optimizer = EquilibriumDB(ignore_newtrees=False)
+mkl_seqopt = SequenceDB()
+
+
+def register_opt(*tags, **kwargs):
+    if any([not isinstance(t, str) for t in tags]):
+        raise RuntimeError("Bad call to register_opt."
+                           " All tags must be strings.", tags)
+
+    def f(local_opt):
+        name = (kwargs and kwargs.pop('name')) or local_opt.__name__
+        mkl_optimizer.register(name, local_opt, 'fast_run', 'fast_compile',
+                               'mkl', *tags, **kwargs)
+        return local_opt
+    return f
+
+
 _logger_name = 'theano.sandbox.mkl'
 _logger = logging.getLogger(_logger_name)
 
@@ -139,6 +163,11 @@ def mkl_available():
                 "mkl-dnn is not supported, %s" % mkl_available.msg)
     '''
     return mkl_available.avail
+
+# register name of 'mkl_opt' in opt.py and then add tags for it.
+if mkl_available:
+    from . import opt
+    optdb.add_tags('mkl_opt', 'fast_compile', 'fast_run')
 
 mkl_available.avail = None
 mkl_available.msg = None
