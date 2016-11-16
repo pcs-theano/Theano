@@ -3,7 +3,7 @@ Optimizations addressing the convolution for mkl
 """
 from __future__ import absolute_import, print_function, division
 # import theano
-# from theano import compile, gof
+from theano import compile, gof
 from theano.compile import optdb
 # from theano.gof import local_optimizer
 from theano.gof.opt import copy_stack_trace
@@ -57,7 +57,18 @@ class Cut_I2U_U2I(Optimizer):
         fgraph.attach_feature(toolbox.ReplaceValidate())
 
     def apply(self, fgraph):
-        print("Intel Theano global opt test: Cut_I2U_U2I ")
+        print("@global opt:Cut_I2U_U2I ")
+        list_i2u = ['I2U']
+        list_u2i = ['U2I_Pool', 'U2I_Relu', 'U2I_Conv']
+        for node in fgraph.toposort():
+            if node.op.__class__.__name__ in list_u2i:
+                # TODO: need another loop to iterate all outputs
+                out  = node.outputs[0]
+                for inp in node.inputs:
+                    if isinstance(inp.owner, gof.Apply) and inp.owner.op.__class__.__name__ in list_i2u:
+                        internal_inp = inp.owner.inputs[0]
+                        fgraph.replace_validate(out, internal_inp)
+
 
 
 mkl_seqopt.register('Cut_I2U_U2I', Cut_I2U_U2I(),
