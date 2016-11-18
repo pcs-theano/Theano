@@ -8,8 +8,6 @@ from theano.sandbox.mkl import mkl_available, mkl_version
 class MKLOp(Op):
     def __init__(self, uniq_id=None):
         self.uniq_id = uniq_id
-        assert mkl_available()
-        self.mklver = mkl_version()
 
     def c_lib_dirs(self):
         return ldflags(libs=False, libs_dir=True)

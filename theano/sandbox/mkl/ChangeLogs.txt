@@ -1,0 +1,13 @@
+Date: 2016/11/19
+Changes:
+----------------------------------
+1.	Updated mkl_pool Op to enable infer_shape and removed file argument in Op
+2.	Update opt.py to fix the segment fault issue of backward pass.
+3.	Rename file names: 
+	tests/test_combination.py -> tests/gen_combination_graph.py
+	tests/test_pool.py -> tests/gen_pool_graph.py
+	tests/test_relu.py -> tests/gen_relu_graph.py
+	Made all this tests to cover both forward and backward pass by default.
+4.	Add a new file tests/test_pool.py for mkl_pool UT.
+5.	Removed mkl_available() check in mkl/basic_ops.py to avoid calling this function multiple times.
+6.	Change Relu and ReluGrad Op names to AbstractRelu and AbstractReluGrad.
