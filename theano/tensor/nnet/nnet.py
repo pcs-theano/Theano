@@ -18,6 +18,7 @@ import numpy
 from six.moves import xrange
 
 import theano
+#import theano.sandbox.mkl
 from theano import gof
 from theano import scalar
 from theano.tensor import extra_ops
@@ -32,6 +33,7 @@ from theano.tensor.nnet.sigm import sigmoid, softplus
 from theano.gradient import DisconnectedType
 from theano.gradient import grad_not_implemented
 from theano.tensor.nnet.blocksparse import sparse_block_dot
+
 
 ############
 #
@@ -2215,6 +2217,17 @@ def relu(x, alpha=0):
     formulation or an optimized Op, so we encourage to use this function.
 
     """
+    # For CPU platform, there's an optimal Relu function for use, which is
+    # only applied when mkl_avaialbe is True. Since MKL function may requires
+    # layout conversion, we put this into the local graph optimizer, so the Op
+    # of Relu could be regarded as empty implementation, just a placeholder in
+    # the graph.
+    # Otherwise, Use the default relu function as it was.
+
+    ## FIXME, call mkl_available will cause theano.tensor error issue....
+    #if mkl_available is True:
+    return AbstractRelu(slope=alpha)(x)
+
     # This is probably the fastest implementation for GPUs. Both the forward
     # pass and the gradient get compiled into a single GpuElemwise call.
     # TODO: Check if it's optimal for CPU as well; add an "if" clause if not.
@@ -2231,21 +2244,23 @@ def relu(x, alpha=0):
         return f1 * x + f2 * abs(x)
 
 
-class Relu(gof.Op):
+class AbstractRelu(gof.Op):
     __props__ = ('slope',)
     def __init__(self, slope=1):
         self.slope = slope
 
     def make_node(self, x):
+        x = tensor.as_tensor_variable(x)
         if x.type.ndim != 4:
-            raise TypeError()
+            raise TypeError('Expect a 4D tensor, but actually got %dD tensor' %
+                            x.type.ndim)
         x = tensor.as_tensor_variable(x)
         return gof.Apply(self, [x], [x.type()])
 
     def grad(self, inp, grads):
         x, = inp
         gz, = grads
-        return [ReluGrad(slope=self.slope)(x, gz)]
+        return [AbstractReluGrad(slope=self.slope)(x, gz)]
 
     def perform(self, node, inp, out_):
         x, = inp
@@ -2254,14 +2269,16 @@ class Relu(gof.Op):
         z = relu(x, self.slope)
 
 
-class ReluGrad(gof.Op):
+class AbstractReluGrad(gof.Op):
     __props__ = ('slope',)
     def __init__(self, slope=1):
         self.slope = slope
 
     def make_node(self, x, gz):
+        x = tensor.as_tensor_variable(x)
         if x.type.ndim != 4:
-            raise TypeError()
+            raise TypeError('Expect a 4D tensor, but actually got %dD tensor' %
+                            x.type.ndim)
         x = tensor.as_tensor_variable(x)
         return gof.Apply(self, [x, gz], [x.type()])
 

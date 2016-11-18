@@ -127,7 +127,7 @@ class poolBase(OpenMPOp):
             static dnnPrimitive_t convert_int2int_input = NULL;
 
             static void* bp[3];
-            static unsigned int long ip;
+            static void *ip = NULL;
             ////END
         """ % sub
         return ccode
@@ -191,7 +191,6 @@ class pool(poolBase):
     def __init__(self, ignore_border=True, mode='max', openmp=None, uniq_id=0):
         super(pool, self).__init__(ignore_border, mode, openmp)
         self.uniq_id =  uniq_id
-        self.fp = 'p_pooling'+str(uniq_id)
 
     @staticmethod
     def out_shape(imgshape, ds, ignore_border=False, st=None, padding=(0, 0)):
@@ -236,16 +235,29 @@ class pool(poolBase):
         r = tensor.extract_constant(r)
         c = tensor.extract_constant(c)
         
-        out_r = numpy.ceil((r + 2 * padding[0] - ds[0]) / float(st[0])) + 1
-        out_c = numpy.ceil((c + 2 * padding[1] - ds[1]) / float(st[1])) + 1
+        # TODO CY, looks like no need to make it float then ceil
+        out_r = numpy.ceil(((r + 2 * padding[0] - ds[0])) / (st[0])) + 1
+        out_c = numpy.ceil(((c + 2 * padding[1] - ds[1])) / (st[1])) + 1
         
-        if (padding[0] or padding[1]):
-            if ((out_r - 1) * st[0]) >= (r + padding[0]):
-                out_r -= 1
-            if ((out_c - 1) * st[1]) >= (c + padding[1]):
-                out_c -= 1
-            assert(((out_r - 1) * st[0]) < (r + padding[0]))
-            assert(((out_c - 1) * st[1]) < (c + padding[1]))
+        if padding[0]:
+            if isinstance(r, theano.Variable):
+                out_r = tensor.switch(tensor.ge(((out_r - 1) * st[0]), (r + padding[0])),
+                                      out_r - 1, out_r)
+                assert(tensor.lt(((out_r - 1) * st[0]), (r + padding[0])))
+            else:
+                if ((out_r - 1) * st[0]) >= (r + padding[0]):
+                    out_r -= 1
+                assert(((out_r - 1) * st[0]) < (r + padding[0]))
+
+        if padding[1]:
+            if isinstance(r, theano.Variable):
+                out_c = tensor.switch(tensor.ge(((out_c - 1) * st[1]), (c + padding[1])),
+                                      out_c - 1, out_c)
+                assert(tensor.lt(((out_c - 1) * st[1]), (c + padding[1])))
+            else:
+                if ((out_c - 1) * st[1]) >= (c + padding[1]):
+                    out_c -= 1
+                assert(((out_c - 1) * st[1]) < (c + padding[1]))
 
         if isinstance(out_r, theano.Variable):
             nr = tensor.cast(out_r, 'int32')
@@ -276,14 +288,10 @@ class pool(poolBase):
         out = tensor.TensorType(x.dtype, broad)
         return gof.Apply(self, [x, ws, stride, pad], [out()])
 
-    '''
-    # FIXME, infer_shape will cause shape info crash during opt when running googlenet v1
     def infer_shape(self, node, in_shapes):
         ws, stride, pad = [node.inputs[1], node.inputs[2], node.inputs[3]]
-        shp = self.out_shape(in_shapes[0], ws, self.ignore_border, stride,
-                             pad)
+        shp = self.out_shape(in_shapes[0], ws, self.ignore_border, stride, pad)
         return [shp]
-    '''
 
     def grad(self, inp, grads):
         x, ws, stride, pad = inp
@@ -291,13 +299,11 @@ class pool(poolBase):
 
         return [poolGrad(ignore_border=self.ignore_border,
                          mode=self.mode,
-                         uniq_id=uniq_id,
-                         fp=self.fp)(x, gz, ws, stride, pad)]
+                         uniq_id=uniq_id)(x, gz, ws, stride, pad)]
 
     def c_code(self, node, name, inp, out, sub):
         x, ws, stride, pad = inp
         z, = out
-        fp=self.fp
         
         if 'max' == self.mode:
             algo = "dnnAlgorithmPoolingMax"
@@ -332,14 +338,9 @@ class pool(poolBase):
         #if __DEBUG__
         std::cout<<"pool start"<<std::endl;
         #endif
-        if (1 == first_run){
-            FILE *pFile;
-            pFile = fopen("%(fp)s","w");
-            fprintf(pFile,"%%llu", bp);
-            fflush(pFile);
-            fclose(pFile);
-        }
         if (1 == first_run) {
+            ((void **)PyArray_DATA(%(x)s))[2] = (void*)bp;
+
             size_t kernel_h = *((npy_intp*)PyArray_GETPTR1(%(ws)s, 0));
             size_t kernel_w = *((npy_intp*)PyArray_GETPTR1(%(ws)s, 1));
             size_t stride_h = *((npy_intp*)PyArray_GETPTR1(%(stride)s, 0));
@@ -506,7 +507,7 @@ class pool(poolBase):
         ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = int_layout_output;
         ((void**)PyArray_DATA(%(z)s))[1] = output_buffer_ptr;
 
-        #if 0
+        #if __DEBUG__
             float *out_p = (float *)workspace_buffer_ptr;
             printf(\"pool forward, workspace; %%g, %%g, %%g, %%g, %%g\\n\", out_p[0], out_p[1],out_p[2],out_p[3],out_p[4]);
             if (dnnLayoutGetMemorySize_%(precision)s(int_layout_output) != (outputSize[0] * outputSize[1] * outputSize[2] * outputSize[3] * sizeof(%(dtype)s))) {
@@ -530,10 +531,9 @@ class pool(poolBase):
 class poolGrad(poolBase):
     __props__ = ('ignore_border', 'mode', 'uniq_id')
 
-    def __init__(self, ignore_border=False, mode='max', openmp=None, uniq_id=0, fp="default.txt"):
+    def __init__(self, ignore_border=False, mode='max', openmp=None, uniq_id=0):
         super(poolGrad, self).__init__(ignore_border, mode, openmp)
         self.uniq_id = uniq_id
-        self.fp = fp
 
     @staticmethod
     def out_shape(imgshape, ds, ignore_border=False, st=None, padding=(0, 0)):
@@ -577,17 +577,32 @@ class poolGrad(poolBase):
         if st is None:
             st = ds
         r, c = imgshape[-2:]
-
-        out_r = numpy.ceil((r + 2 * padding[0] - ds[0]) / float(st[0])) + 1
-        out_c = numpy.ceil((c + 2 * padding[1] - ds[1]) / float(st[1])) + 1
+        r = tensor.extract_constant(r)
+        c = tensor.extract_constant(c)
         
-        if (padding[0] or padding[1]):
-            if ((out_r - 1) * st[0]) >= (r + padding[0]):
-                out_r -= 1
-            if ((out_c - 1) * st[1]) >= (c + padding[1]):
-                out_c -= 1
-            assert(((out_r - 1) * st[0]) < (r + padding[0]))
-            assert(((out_c - 1) * st[1]) < (c + padding[1]))
+        # TODO CY, looks like no need to make it float then ceil
+        out_r = numpy.ceil(((r + 2 * padding[0] - ds[0])) / (st[0])) + 1
+        out_c = numpy.ceil(((c + 2 * padding[1] - ds[1])) / (st[1])) + 1
+        
+        if padding[0]:
+            if isinstance(r, theano.Variable):
+                out_r = tensor.switch(tensor.ge(((out_r - 1) * st[0]), (r + padding[0])),
+                                      out_r - 1, out_r)
+                assert(tensor.lt(((out_r - 1) * st[0]), (r + padding[0])))
+            else:
+                if ((out_r - 1) * st[0]) >= (r + padding[0]):
+                    out_r -= 1
+                assert(((out_r - 1) * st[0]) < (r + padding[0]))
+
+        if padding[1]:
+            if isinstance(r, theano.Variable):
+                out_c = tensor.switch(tensor.ge(((out_c - 1) * st[1]), (c + padding[1])),
+                                      out_c - 1, out_c)
+                assert(tensor.lt(((out_c - 1) * st[1]), (c + padding[1])))
+            else:
+                if ((out_c - 1) * st[1]) >= (c + padding[1]):
+                    out_c -= 1
+                assert(((out_c - 1) * st[1]) < (c + padding[1]))
 
         if isinstance(out_r, theano.Variable):
             nr = tensor.cast(out_r, 'int32')
@@ -602,10 +617,8 @@ class poolGrad(poolBase):
         rval = list(imgshape[:-2]) + [nr, nc]
         return rval
 
-    '''
     def infer_shape(self, node, in_shapes):
         return [in_shapes[0]]
-    '''
 
     def make_node(self, x, gz, ws, stride, pad):
         x = tensor.as_tensor_variable(x)
@@ -629,7 +642,6 @@ class poolGrad(poolBase):
     def c_code(self, node, name, inp, out, sub):
         x, gz, ws, stride, pad = inp
         gx, = out
-        fp = self.fp
 
         if 'max' == self.mode:
             algo = "dnnAlgorithmPoolingMax"
@@ -661,19 +673,9 @@ class poolGrad(poolBase):
         #if __DEBUG__
         std::cout<<"poolgrad start"<<std::endl;
         #endif
-        if(first_run) {
-            std::ifstream inp("%(fp)s");
-            if(inp.is_open()) {
-                std::cout<<"pool open inp ok\\n";
-            }else{
-                std::cout<<"open fail\\n";
-            }
-            while(inp>>ip){
-                //std::cout<<std::hex<<"ip "<<ip<<std::dec<<std::endl;
-            }
-            inp.close();
-        }
         if (1 == first_run) {
+            ip = ((void**)PyArray_DATA(%(x)s))[2];
+
             size_t kernel_h = *((npy_intp*)PyArray_GETPTR1(%(ws)s, 0));
             size_t kernel_w = *((npy_intp*)PyArray_GETPTR1(%(ws)s, 1));
             size_t stride_h = *((npy_intp*)PyArray_GETPTR1(%(stride)s, 0));
