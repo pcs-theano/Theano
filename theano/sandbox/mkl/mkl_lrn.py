@@ -6,7 +6,7 @@ import theano
 from theano import gof, Op, tensor, Variable, Apply
 from theano.tensor import as_tensor_variable, TensorType
 from theano.tensor.blas import ldflags, blas_header_version
-from theano.tensor.nnet import mkldnn_helper
+from theano.sandbox.mkl import mkl_helper
 
 class NormAcrossMap(Op):
     """
@@ -58,7 +58,7 @@ class NormAcrossMap(Op):
             beta=self.beta, k=self.k, n=self.size, fp=self.fp)(x, gz)]
 
     def c_support_code(self):
-        return mkldnn_helper.mkldnn_header_text()+"""
+        return mkl_helper.header_text()+"""
             static dnnLayout_t fwd_bottom_data_usr_l;
             static dnnPrimitive_t fwd_bottom_convert_to_int;
             static dnnPrimitive_t fwd_bottom_convert_from_int;
@@ -92,9 +92,18 @@ class NormAcrossMap(Op):
         """
 
     def c_code_cleanup_struct(self, node, name, input_names, output_names, sub):
-        return """
-        dnnReleaseBuffer_F32(buffer);
-        """
+        dtype = str(node.__dict__['inputs'][0].dtype)
+        assert dtype in ('float32', 'float64')
+
+        if dtype == 'float32':
+            precision = 'F32'
+        else:
+            precision = 'F64'
+
+        ccode = """
+            dnnReleaseBuffer_%s(buffer)
+        """ % precision
+        return ccode
 
     def c_headers(self):
         return ['<math.h>','<iostream>','<fstream>']
@@ -113,6 +122,15 @@ class NormAcrossMap(Op):
         size = self.size
         k = self.k
         fp=self.fp
+        
+        dtype = str(node.__dict__['inputs'][0].dtype)
+        assert dtype in ('float32', 'float64')
+
+        if dtype == 'float32':
+            precision = 'F32'
+        else:
+            precision = 'F64'
+        
         ret = """
         {
             #if __DEBUG__
@@ -154,53 +172,53 @@ class NormAcrossMap(Op):
             dtype_%(lrn_fwd_out)s *output = (dtype_%(lrn_fwd_out)s *)PyArray_DATA(%(lrn_fwd_out)s);
             if(first_run){
                 //fake a fwd bottom internal layout, should be passed from previous layer
-                if (E_SUCCESS != dnnLayoutCreate_F32(&fwd_bottom_data_int_l, dim, sizes, strides)){
+                if (E_SUCCESS != dnnLayoutCreate_%(precision)s(&fwd_bottom_data_int_l, dim, sizes, strides)){
                   std::cout<<"fwd_bottom_data_int_l creat fail\\n";
                 }
                 // These 4 usr layouts should be inited once
-                if (E_SUCCESS != dnnLayoutCreate_F32(&fwd_bottom_data_usr_l, dim, sizes, strides)){
+                if (E_SUCCESS != dnnLayoutCreate_%(precision)s(&fwd_bottom_data_usr_l, dim, sizes, strides)){
                   std::cout<<"fwd_bottom_data_usr_l creat fail\\n";
                 }
-                if (E_SUCCESS != dnnLayoutCreate_F32(&fwd_top_data_usr_l, dim, sizes, strides)){
+                if (E_SUCCESS != dnnLayoutCreate_%(precision)s(&fwd_top_data_usr_l, dim, sizes, strides)){
                   std::cout<<"fwd_top_data_usr_l creat fail\\n";
                 }
 
-                if (E_SUCCESS != dnnLRNCreateForward_F32(&lrnFwd, NULL, layout_previous_layer, %(size)s, %(alpha)s, %(beta)s, %(k)s)){
+                if (E_SUCCESS != dnnLRNCreateForward_%(precision)s(&lrnFwd, NULL, layout_previous_layer, %(size)s, %(alpha)s, %(beta)s, %(k)s)){
                     std::cout<<"lrn fwd creat fail\\n";
                     std::cout<<"layout from previous layer "<<layout_previous_layer<<std::endl;
                     std::cout<<"size: "<<%(size)s<<", alpha: "<<%(alpha)s<<", beta: "<<%(beta)s<<", k: "<<%(k)s<<std::endl;
                 }
 
-                if (E_SUCCESS != dnnLayoutCreateFromPrimitive_F32(&fwd_top_data_int_l, lrnFwd, dnnResourceDst)){
+                if (E_SUCCESS != dnnLayoutCreateFromPrimitive_%(precision)s(&fwd_top_data_int_l, lrnFwd, dnnResourceDst)){
                   std::cout<<"fwd_top_data_int_l creat fail\\n";
                 }
 
-                if (fwd_top_data_int_l && !dnnLayoutCompare_F32(fwd_top_data_usr_l, fwd_top_data_int_l)) {
+                if (fwd_top_data_int_l && !dnnLayoutCompare_%(precision)s(fwd_top_data_usr_l, fwd_top_data_int_l)) {
                     //std::cout<<"fwd layout conversion\\n";
-                    e = dnnConversionCreate_F32(&fwd_top_convert_to_int, fwd_top_data_usr_l,fwd_top_data_int_l);
+                    e = dnnConversionCreate_%(precision)s(&fwd_top_convert_to_int, fwd_top_data_usr_l,fwd_top_data_int_l);
                     if (e != E_SUCCESS){
-                      std::cout<<"dnnConversionCreate_F32 fail with e "<<e<<std::endl;
+                      std::cout<<"dnnConversionCreate_%(precision)s fail with e "<<e<<std::endl;
                     }
-                    e = dnnConversionCreate_F32(&fwd_top_convert_from_int, fwd_top_data_int_l,fwd_top_data_usr_l);
+                    e = dnnConversionCreate_%(precision)s(&fwd_top_convert_from_int, fwd_top_data_int_l,fwd_top_data_usr_l);
                     if (e != E_SUCCESS){
-                      std::cout<<"dnnConversionCreate_F32 i2u fail with e "<<e<<std::endl;
+                      std::cout<<"dnnConversionCreate_%(precision)s i2u fail with e "<<e<<std::endl;
                     }
                 }
 
-                e = dnnLayoutCreateFromPrimitive_F32(&lrn_buffer_l, lrnFwd, dnnResourceWorkspace);
+                e = dnnLayoutCreateFromPrimitive_%(precision)s(&lrn_buffer_l, lrnFwd, dnnResourceWorkspace);
                 if (e != E_SUCCESS){
-                  std::cout<<"dnnLayoutCreateFromPrimitive_F32 fail\\n";
+                  std::cout<<"dnnLayoutCreateFromPrimitive_%(precision)s fail\\n";
                 }
-                e = dnnAllocateBuffer_F32(reinterpret_cast<void **>(&lrn_buffer), lrn_buffer_l);
+                e = dnnAllocateBuffer_%(precision)s(reinterpret_cast<void **>(&lrn_buffer), lrn_buffer_l);
                 if (e != E_SUCCESS){
                   std::cout<<"allocate lrn buffer fail with e code "<<e<<std::endl;
                 }
-                dnnLayoutDelete_F32(lrn_buffer_l);
+                dnnLayoutDelete_%(precision)s(lrn_buffer_l);
                 ((void**)bp)[0] = lrn_buffer;
             }
 
             if (NULL == buffer) {
-                e = dnnAllocateBuffer_F32(&buffer, layout_previous_layer);
+                e = dnnAllocateBuffer_%(precision)s(&buffer, layout_previous_layer);
                 if (E_SUCCESS != e){
                   std::cout<<"fwd bn allocate fail with error code "<<e<<std::endl;
                 }
@@ -211,7 +229,7 @@ class NormAcrossMap(Op):
             ((dnnLayout_t*)output)[0] = layout_previous_layer;
             ((void**)output)[1] = buffer;
             lrn_res[dnnResourceWorkspace] = lrn_buffer;
-            if (E_SUCCESS != dnnExecute_F32(lrnFwd, lrn_res)){
+            if (E_SUCCESS != dnnExecute_%(precision)s(lrnFwd, lrn_res)){
               std::cout<<"fwd execute fail"<<std::endl;
             }
             first_run=0;
@@ -239,7 +257,7 @@ class NormAcrossMapGrad(Op):
     n    : indicates how many nearby maps to use for normalization.
 
     """
-    def __init__(self, uniq_id=0, alpha=None, beta=None, k=None, n=None, fp='default.txt'):
+    def __init__(self, uniq_id=0, alpha=1e-4, beta=0.75, k=2, n=5, fp='default.txt'):
       self.alpha = alpha
       self.beta = beta
       self.k = k
@@ -264,13 +282,22 @@ class NormAcrossMapGrad(Op):
         return ldflags()
 
     def c_code_cleanup_struct(self, node, name, input_names, output_names, sub):
-        return """
-        std::cout<<"releasing buffer\\n";
-        dnnReleaseBuffer_F32(buffer);
-        """
+        dtype = str(node.__dict__['inputs'][0].dtype)
+        assert dtype in ('float32', 'float64')
+
+        if dtype == 'float32':
+            precision = 'F32'
+        else:
+            precision = 'F64'
+
+        ccode = """
+            std::out<<"releasing buffer\\n";
+            dnnReleaseBuffer_%s(buffer);
+        """ % precision
+        return ccode
 
     def c_support_code(self):
-        return mkldnn_helper.mkldnn_header_text()+"""
+        return mkl_helper.header_text()+"""
         static int first_run=1;
         static int typenum;
         static int x_bs;
@@ -308,14 +335,23 @@ class NormAcrossMapGrad(Op):
         return gof.Apply(self, [x, gz], [x.type()])
 
     def c_code(self, node, name, inp, out, sub):
-      x, gz,  =inp
-      z, = out
-      alpha = self.alpha
-      beta = self.beta
-      size = self.size
-      k = self.k
-      fp = self.fp
-      ret = """
+        x, gz,  =inp
+        z, = out
+        alpha = self.alpha
+        beta = self.beta
+        size = self.size
+        k = self.k
+        fp = self.fp
+
+        dtype = str(node.__dict__['inputs'][0].dtype)
+        assert dtype in ('float32', 'float64')
+
+        if dtype == 'float32':
+            precision = 'F32'
+        else:
+            precision = 'F64'
+
+        ret = """
         {
             #if __DEBUG__
             std::cout<<"lrn bwd start\\n";
@@ -338,10 +374,10 @@ class NormAcrossMapGrad(Op):
                 strides[1] = sizes[0];
                 strides[2] = sizes[0]*sizes[1];
                 strides[3] = sizes[0]*sizes[1]*sizes[2];
-                if (E_SUCCESS != dnnLayoutCreate_F32(&bwd_bottom_diff_usr_l, dim, sizes, strides)){
+                if (E_SUCCESS != dnnLayoutCreate_%(precision)s(&bwd_bottom_diff_usr_l, dim, sizes, strides)){
                   std::cout<<"bwd_bottom_diff_usr_l creat fail\\n";
                 }
-                if (E_SUCCESS != dnnLayoutCreate_F32(&bwd_top_diff_usr_l, dim, sizes, strides)){
+                if (E_SUCCESS != dnnLayoutCreate_%(precision)s(&bwd_top_diff_usr_l, dim, sizes, strides)){
                   std::cout<<"bwd_top_diff_usr_l creat fail\\n";
                 }
                 layout_previous_layer = ((dnnLayout_t *)PyArray_DATA(%(x)s))[0];
@@ -365,14 +401,14 @@ class NormAcrossMapGrad(Op):
             dtype_%(z)s *output = (dtype_%(z)s *)PyArray_DATA(%(z)s);
             input_gz = ((void**)PyArray_DATA(%(gz)s))[1];
             if(first_run){
-                if (E_SUCCESS != dnnLRNCreateBackward_F32(&lrnBwd, NULL,layout_previous_layer,
+                if (E_SUCCESS != dnnLRNCreateBackward_%(precision)s(&lrnBwd, NULL,layout_previous_layer,
                 layout_previous_layer,%(size)s, %(alpha)s, %(beta)s, %(k)s)){
                     std::cout<<"lrn bwd creat fail\\n";
                 }
             }
 
             if (NULL == buffer) {
-                e = dnnAllocateBuffer_F32(&buffer, layout_previous_layer);
+                e = dnnAllocateBuffer_%(precision)s(&buffer, layout_previous_layer);
                 if (E_SUCCESS != e){
                   std::cout<<"bwd bn allocate fail with error code "<<e<<std::endl;
                 }
@@ -386,7 +422,7 @@ class NormAcrossMapGrad(Op):
             ((dnnLayout_t*)output)[0] = layout_previous_layer;
             ((void**)output)[1] = buffer;
 
-            e = dnnExecute_F32(lrnBwd, lrn_res);
+            e = dnnExecute_%(precision)s(lrnBwd, lrn_res);
             if (E_SUCCESS != e){
                 std::cout<<"bwd execute fail with error code "<<e<<std::endl;
             }
@@ -396,7 +432,8 @@ class NormAcrossMapGrad(Op):
             #endif
             }
             """ % locals()
-      return ret
+        return ret
 
     def c_code_cache_version(self):
         return (0, 1, self.uniq_id)
+

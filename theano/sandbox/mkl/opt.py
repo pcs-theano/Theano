@@ -25,12 +25,16 @@ from theano.sandbox.mkl.basic_ops import (U2IGrad,
                                           I2UGrad,
                                           U2I_Pool,
                                           U2I_Relu,
+                                          U2I_LRN
                                           )
 from theano.sandbox.mkl import mkl_relu
 from theano.sandbox.mkl import mkl_pool
+from theano.sandbox.mkl import mkl_lrn
 
 from theano.tensor.signal import pool
 from theano.tensor.nnet.nnet import (Relu, ReluGrad)
+
+import theano.tensor.nnet.lrn as lrn
 
 # uniq_id for all the mkl Ops, to differentiate different layer even they've same parameters.
 uniq_id = 0
@@ -201,3 +205,71 @@ def local_reluGrad_mkl(node):
 
     rval = gx_i2u
     return [rval]
+
+
+@register_opt()
+@local_optimizer([lrn.LRN])
+def local_lrn_mkl(node):
+    print('@@local_lrn_mkl')
+    global uniq_id
+    uniq_id += 1
+
+    if not mkl_available():
+        return
+
+    if not isinstance(node.op, lrn.LRN):
+        return
+
+    x, = node.inputs
+    x_u2i = U2I_LRN(slope=node.op.slope, 
+                    uniq_id=uniq_id, 
+                    alpha=node.op.alpha, 
+                    beta=node.op.beta, 
+                    k=node.op.k, 
+                    n=node.op.n)(x)
+
+    lrnout = mkl_lrn.NormAcrossMap(uniq_id=uniq_id, 
+                                    alpha=node.op.alpha, 
+                                    beta=node.op.beta, 
+                                    k=node.op.k, 
+                                    n=node.op.n)(x_u2i)
+    z_i2u = I2U(uniq_id=uniq_id)(lrnout)
+
+    rval = z_i2u
+    return [rval]
+
+
+@register_opt()
+@local_optimizer([lrn.LRNGrad])
+def local_lrnGrad_mkl(node):
+    print('@@local_lrnGrad_mkl')
+    global uniq_id
+    uniq_id += 1
+
+    if not mkl_available():
+        return
+
+    if not isinstance(node.op, lrn.LRNGrad):
+        return
+
+    x, gz, = node.inputs
+
+    x_u2i = U2I_LRN(slope=node.op.slope, 
+                    uniq_id=uniq_id,
+                    alpha=node.op.alpha,
+                    beta=node.op.beta,
+                    k=node.op.k,
+                    n=node.op.n)(x)
+    gz_u2i = I2UGrad(uniq_id=uniq_id)(x_u2i, gz)
+    lrnGradOut = mkl_lrn.NormAcrossMapGrad(uniq_id=uniq_id,
+                                            alpha=node.op.alpha,
+                                            beta=node.op.beta,
+                                            k=node.op.k,
+                                            n=node.op.n,
+                                            fp=node.op.fp)(x_u2i, gz_u2i)
+    gx_i2u = U2IGrad(uniq_id=uniq_id)(x_u2i, lrnGradOut)
+
+    rval = gx_i2u
+    return [rval]
+
+
