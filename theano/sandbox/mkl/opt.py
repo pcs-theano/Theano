@@ -279,14 +279,20 @@ def local_lrnGrad_mkl(node):
                     beta=node.op.beta,
                     k=node.op.k,
                     n=node.op.n)(x)
+    lrnOut = mkl_lrn.NormAcrossMap(uniq_id=uniq_id,
+                                    alpha=node.op.alpha,
+                                    beta=node.op.beta,
+                                    k=node.op.k,
+                                    n=node.op.n)(x_u2i)
     gz_u2i = I2UGrad(uniq_id=uniq_id)(x_u2i, gz)
+    gz_u2i = I2UGrad(uniq_id=uniq_id)(lrnOut, gz)
     lrnGradOut = mkl_lrn.NormAcrossMapGrad(uniq_id=uniq_id,
                                             alpha=node.op.alpha,
                                             beta=node.op.beta,
                                             k=node.op.k,
                                             n=node.op.n,
                                             fp=node.op.fp)(x_u2i, gz_u2i)
-    gx_i2u = U2IGrad(uniq_id=uniq_id)(x_u2i, lrnGradOut)
+    gx_i2u = U2IGrad(uniq_id=uniq_id)(x, lrnGradOut)
 
     rval = gx_i2u
     return [rval]
