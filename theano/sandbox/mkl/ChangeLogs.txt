@@ -11,3 +11,15 @@ Changes:
 4.	Add a new file tests/test_pool.py for mkl_pool UT.
 5.	Removed mkl_available() check in mkl/basic_ops.py to avoid calling this function multiple times.
 6.	Change Relu and ReluGrad Op names to AbstractRelu and AbstractReluGrad.
+
+
+
+Date: 2016/11/21
+By lvtao
+Changes:
+----------------------------------
+1.	Add tensor/nnet/lrn.py, including two empty class to implement LRN and LRN Grad
+2.	Update basic_op.py to add U2I_LRN Class.
+3.	Update opt.py to add opts for LRN and LRN Grad.
+4.	Add tests/test_lrn.py to generate LRN graphics.
+5.	Add tests/test_opt.py for graphics UT.
