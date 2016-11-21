@@ -32,7 +32,7 @@ from theano.sandbox.mkl import mkl_pool
 from theano.sandbox.mkl import mkl_lrn
 
 from theano.tensor.signal import pool
-from theano.tensor.nnet.nnet import (Relu, ReluGrad)
+from theano.tensor.nnet.nnet import (AbstractRelu, AbstractReluGrad)
 
 import theano.tensor.nnet.lrn as lrn
 
@@ -93,7 +93,6 @@ def local_dummy(node):
 @register_opt()
 @local_optimizer([pool.Pool])
 def local_pool_mkl(node):
-    print ('@@@local_pool_mkl')
     global uniq_id
     uniq_id += 1
 
@@ -101,6 +100,9 @@ def local_pool_mkl(node):
         return
 
     if not isinstance(node.op, pool.Pool):
+        return
+
+    if node.inputs[0].type.ndim != 4:
         return
 
     if not node.op.ignore_border:
@@ -118,16 +120,14 @@ def local_pool_mkl(node):
                             uniq_id=uniq_id)(x_u2i, ws, stride, pad)
     z_i2u = I2U(uniq_id=uniq_id)(poolOut)
 
+    print ('@@@ done with local_pool_mkl')
     rval = z_i2u
-    copy_stack_trace(node.outputs[0], rval)
-
     return [rval]
 
 
 @register_opt()
 @local_optimizer([pool.MaxPoolGrad])
 def local_poolGrad_mkl(node):
-    print ('@@@local_poolGrad_mkl')
     global uniq_id
     uniq_id += 1
 
@@ -137,6 +137,10 @@ def local_poolGrad_mkl(node):
     if not isinstance(node.op, pool.MaxPoolGrad):
         return
 
+    if node.inputs[0].type.ndim != 4:
+        return
+
+    # currently, MKL only support this mode
     if not node.op.ignore_border:
         return
 
@@ -147,30 +151,35 @@ def local_poolGrad_mkl(node):
     x_u2i = U2I_Pool(ignore_border=node.op.ignore_border,
                      mode=node.op.mode,
                      uniq_id=uniq_id)(x, ws, stride, pad)
-    gz_u2i = I2UGrad(uniq_id=uniq_id)(x_u2i, gz)
+    poolOut = mkl_pool.pool(ignore_border=node.op.ignore_border,
+                      mode=node.op.mode,
+                      uniq_id=uniq_id)(x_u2i, ws, stride, pad)
+    gz_u2i = I2UGrad(uniq_id=uniq_id)(poolOut, gz)
+
     poolGradOut = mkl_pool.poolGrad(ignore_border=node.op.ignore_border,
                                     mode=node.op.mode,
                                     uniq_id=uniq_id)(x_u2i, gz_u2i, ws, stride, pad)
-    # gx_i2u = I2U(uniq_id=uniq_id)(poolGradOut)
-    gx_i2u = U2IGrad(uniq_id=uniq_id)(x_u2i, poolGradOut)
 
+    gx_i2u = U2IGrad(uniq_id=uniq_id)(x, poolGradOut)
+
+    print ('@@@ done with local_poolGrad_mkl')
     rval = gx_i2u
-    copy_stack_trace(node.outputs[0], rval)
-
     return [rval]
 
 
 @register_opt()
-@local_optimizer([Relu])
+@local_optimizer([AbstractRelu])
 def local_relu_mkl(node):
-    print ('@@@local_relu_mkl')
     global uniq_id
     uniq_id += 1
 
     if not mkl_available():
         return
 
-    if not isinstance(node.op, Relu):
+    if not isinstance(node.op, AbstractRelu):
+        return
+
+    if node.inputs[0].type.ndim != 4:
         return
 
     x, = node.inputs
@@ -179,30 +188,40 @@ def local_relu_mkl(node):
     reluOut = mkl_relu.Relu(slope=node.op.slope, uniq_id=uniq_id)(x_u2i)
     z_i2u = I2U(uniq_id=uniq_id)(reluOut)
 
+    print ('@@@ done with local_relu_mkl')
     rval = z_i2u
     return [rval]
 
 
 @register_opt()
-@local_optimizer([ReluGrad])
+@local_optimizer([AbstractReluGrad])
 def local_reluGrad_mkl(node):
-    print ('@@@local_reluGrad_mkl')
     global uniq_id
     uniq_id += 1
 
     if not mkl_available():
         return
 
-    if not isinstance(node.op, ReluGrad):
+    if not isinstance(node.op, AbstractReluGrad):
+        return
+
+    if node.inputs[0].type.ndim != 4:
         return
 
     x, gz = node.inputs
 
-    x_u2i = U2I_Relu(slope=node.op.slope, uniq_id=uniq_id)(x)
-    gz_u2i = I2UGrad(uniq_id=uniq_id)(x_u2i, gz)
-    reluGradOut = mkl_relu.ReluGrad(slope=node.op.slope, uniq_id=uniq_id)(x_u2i, gz_u2i)
-    gx_i2u = U2IGrad(uniq_id=uniq_id)(x_u2i, reluGradOut)
 
+    x_u2i = U2I_Relu(slope=node.op.slope, uniq_id=uniq_id)(x)
+    reluOut = mkl_relu.Relu(slope=node.op.slope, uniq_id=uniq_id)(x_u2i)
+    gz_u2i = I2UGrad(uniq_id=uniq_id)(x_u2i, gz)
+
+    gz_u2i = I2UGrad(uniq_id=uniq_id)(reluOut, gz)
+
+    reluGradOut = mkl_relu.ReluGrad(slope=node.op.slope, uniq_id=uniq_id)(x_u2i, gz_u2i)
+
+    gx_i2u = U2IGrad(uniq_id=uniq_id)(x, reluGradOut)
+
+    print ('@@@ done with local_reluGrad_mkl')
     rval = gx_i2u
     return [rval]
 
