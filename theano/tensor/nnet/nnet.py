@@ -2266,7 +2266,7 @@ class AbstractRelu(gof.Op):
         x, = inp
         z, = out_
         
-        z = relu(x, self.slope)
+        z = x
 
 
 class AbstractReluGrad(gof.Op):
