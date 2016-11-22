@@ -36,8 +36,8 @@ class Relu(Op):
 
     def __eq__(self, other):
         return (type(self) == type(other) and
-		self.slope == other.slope and
-        self.uniq_id == other.uniq_id)
+                self.slope == other.slope and
+                self.uniq_id == other.uniq_id)
 
     def __hash__(self):
         return (hash(type(self)) ^ hash(self.slope) ^ hash(self.uniq_id))
@@ -88,12 +88,19 @@ class Relu(Op):
         static PyArrayObject* real_buffer = NULL;
         static dnnLayout_t* layout_p=NULL;
         #define L_PASS (1)
-	    #define __DEBUG__ 0
+        #define __DEBUG__ 0
         """
     def c_code_cleanup_struct(self, node, name, input_names, output_names, sub):
+        if node.inputs[0].type.dtype == "float32":
+            sub['precision'] = 'F32'
+        elif node.inputs[0].type.dtype == "float64":
+            sub['precision'] = 'F64'
+        else:
+            raise TypeError('input must be float32 or float64')
+
         return """
-        dnnReleaseBuffer_F32(buffer);
-        """
+        dnnReleaseBuffer_%(precision)s(buffer);
+        """ % sub
 
     def c_headers(self):
         return ['<math.h>','<iostream>']
@@ -107,8 +114,18 @@ class Relu(Op):
     def c_code(self, node, name, inp, out, sub):
         x, = inp
         z, = out
-        fail = sub['fail']
         slope = self.slope
+
+        if node.inputs[0].type.dtype == "float32":
+            sub['precision'] = 'F32'
+        elif node.inputs[0].type.dtype == "float64":
+            sub['precision'] = 'F64'
+        else:
+            raise TypeError('input must be float32 or float64')
+
+        sub = sub.copy()
+        sub.update(locals())
+
         ret = """
         {
             #if __DEBUG__
@@ -159,16 +176,16 @@ class Relu(Op):
 
             #ifdef USER_LAYOUT
             if(first_run){
-                e = dnnLayoutCreate_F32(&fwd_bottom_data_usr_l, dim, sizes, strides);
+                e = dnnLayoutCreate_%(precision)s(&fwd_bottom_data_usr_l, dim, sizes, strides);
                 if (E_SUCCESS != e){
                   std::cout<<"relu fwd_bottom_data_usr_l creat fail with error code "<<e<<std::endl;
                 }
-                e = dnnLayoutCreate_F32(&fwd_top_data_usr_l, dim, sizes, strides);
+                e = dnnLayoutCreate_%(precision)s(&fwd_top_data_usr_l, dim, sizes, strides);
                 if (E_SUCCESS != e){
                   std::cout<<"relu fwd_top_data_usr_l creat fail\\n";
                 }
 
-                e = dnnReLUCreateForward_F32(&reluFwd, NULL, fwd_bottom_data_usr_l, %(slope)s);
+                e = dnnReLUCreateForward_%(precision)s(&reluFwd, NULL, fwd_bottom_data_usr_l, %(slope)s);
                 if (E_SUCCESS != e){
                     std::cout<<"relu fwd creat fail with error code "<<e<<std::endl;
                 }
@@ -179,12 +196,12 @@ class Relu(Op):
             input_buffer_ptr = ((void **)PyArray_DATA(%(x)s))[1];
 
             if (first_run) {
-                e = dnnReLUCreateForward_F32(&reluFwd, NULL, fwd_bottom_data_int_l, %(slope)s);
+                e = dnnReLUCreateForward_%(precision)s(&reluFwd, NULL, fwd_bottom_data_int_l, %(slope)s);
                 if (E_SUCCESS != e){
                     std::cout<<"relu fwd creat fail with error code "<<e<<std::endl;
                 }
 
-                e = dnnLayoutCreateFromPrimitive_F32(&fwd_top_data_int_l, reluFwd, dnnResourceDst);
+                e = dnnLayoutCreateFromPrimitive_%(precision)s(&fwd_top_data_int_l, reluFwd, dnnResourceDst);
                 if (E_SUCCESS != e){
                   std::cout<<"relu fwd_top_data_int_l creat fail with error code "<<e<<std::endl;
                 } 
@@ -193,24 +210,24 @@ class Relu(Op):
             #if __DEBUG__ 
 	        std::cout<<"relu forward: fwd_bottom_data_int_l:"<<fwd_bottom_data_int_l<<std::endl;
 	        std::cout<<"relu forward: input:"<<input_buffer_ptr<<std::endl;
-                size_t img_size = dnnLayoutGetMemorySize_F32(fwd_bottom_data_int_l);
-                size_t out_size = dnnLayoutGetMemorySize_F32(fwd_top_data_int_l);
+                size_t img_size = dnnLayoutGetMemorySize_%(precision)s(fwd_bottom_data_int_l);
+                size_t out_size = dnnLayoutGetMemorySize_%(precision)s(fwd_top_data_int_l);
                 std::cout<<"input size: "<<sizes[3]<<" x "<<sizes[2]<<" x "<<sizes[1]<<" x "<<sizes[0]<<std::endl;
                 std::cout<<"relu forward: input size in bytes: "<<img_size<<", output size in bytes: "<<out_size<<std::endl;
             #endif
 	    if (NULL == output_buffer_ptr) {
-                e = dnnAllocateBuffer_F32(&output_buffer_ptr, fwd_top_data_int_l);
+                e = dnnAllocateBuffer_%(precision)s(&output_buffer_ptr, fwd_top_data_int_l);
                 if (E_SUCCESS != e){
                   std::cout<<"relu allocate fail with error code "<<e<<std::endl;
                 }       
-                memset(output_buffer_ptr,0,dnnLayoutGetMemorySize_F32(fwd_top_data_int_l));  
+                memset(output_buffer_ptr,0,dnnLayoutGetMemorySize_%(precision)s(fwd_top_data_int_l));  
             }
 
             relu_res[dnnResourceDst] = (void*)output_buffer_ptr;
             relu_res[dnnResourceSrc] = (void*)input_buffer_ptr;
 
 
-            if (E_SUCCESS != dnnExecute_F32(reluFwd, relu_res)){
+            if (E_SUCCESS != dnnExecute_%(precision)s(reluFwd, relu_res)){
               std::cout<<"relu fwd execute fail"<<std::endl;
             }
 
@@ -224,11 +241,12 @@ class Relu(Op):
             std::cout<<"relu fwd finished\\n"<<std::endl;                
             #endif
         }
-	""" % locals()
+        """ % sub
 	return ret
 
     def c_code_cache_version(self):
         return (0, 1, self.uniq_id)
+
 
 class ReluGrad(Op):
     """
@@ -295,9 +313,16 @@ class ReluGrad(Op):
         """
 
     def c_code_cleanup_struct(self, node, name, input_names, output_names, sub):
+        if node.inputs[0].type.dtype == "float32":
+            sub['precision'] = 'F32'
+        elif node.inputs[0].type.dtype == "float64":
+            sub['precision'] = 'F64'
+        else:
+            raise TypeError('input must be float32 or float64')
+
         return """
-        dnnReleaseBuffer_F32(output_buffer_ptr);
-        """
+        dnnReleaseBuffer_%(precision)s(output_buffer_ptr);
+        """ % sub
 
     def c_lib_dirs(self):
         return ldflags(libs=False, libs_dir=True)
@@ -311,11 +336,21 @@ class ReluGrad(Op):
         return gof.Apply(self, [x, gz], [x.type()])
 
     def c_code(self, node, name, inp, out, sub):
-      x, gz, =inp
-      z, = out
-      slope = self.slope
-      fail = sub['fail']
-      ret = """
+        x, gz, =inp
+        z, = out
+        slope = self.slope
+
+        if node.inputs[0].type.dtype == "float32":
+            sub['precision'] = 'F32'
+        elif node.inputs[0].type.dtype == "float64":
+            sub['precision'] = 'F64'
+        else:
+            raise TypeError('input must be float32 or float64')
+
+        sub = sub.copy()
+        sub.update(locals())
+
+        ret = """
         { 
             #if __DEBUG__
             std::cout<<"Relu bwd start"<<std::endl;
@@ -366,22 +401,22 @@ class ReluGrad(Op):
             //printf(\"reluGrad:%%x, %%x\\n\",bwd_top_diff_int_l,input_gz);
 
             if(first_run){
-                if (E_SUCCESS != dnnReLUCreateBackward_F32(&reluBwd, NULL, bwd_bottom_diff_int_l, 
+                if (E_SUCCESS != dnnReLUCreateBackward_%(precision)s(&reluBwd, NULL, bwd_bottom_diff_int_l, 
                     bwd_bottom_diff_int_l, %(slope)s)){
                     std::cout<<"relu bwd creat fail\\n";
                 }
             }
 	    if (NULL == output_buffer_ptr) {
-                e = dnnAllocateBuffer_F32(&output_buffer_ptr, bwd_bottom_diff_int_l);
+                e = dnnAllocateBuffer_%(precision)s(&output_buffer_ptr, bwd_bottom_diff_int_l);
                 if (E_SUCCESS != e){
                   std::cout<<"relu allocate fail with error code "<<e<<std::endl;
                 }       
-                memset(output_buffer_ptr,0,dnnLayoutGetMemorySize_F32(bwd_bottom_diff_int_l));  
+                memset(output_buffer_ptr,0,dnnLayoutGetMemorySize_%(precision)s(bwd_bottom_diff_int_l));  
             }
 
-            if(dnnLayoutGetMemorySize_F32(bwd_bottom_diff_int_l) != dnnLayoutGetMemorySize_F32(bwd_top_diff_int_l))
+            if(dnnLayoutGetMemorySize_%(precision)s(bwd_bottom_diff_int_l) != dnnLayoutGetMemorySize_%(precision)s(bwd_top_diff_int_l))
             {
-                printf(\"reluGradSize Error: %%d, %%d\\n\",dnnLayoutGetMemorySize_F32(bwd_bottom_diff_int_l),dnnLayoutGetMemorySize_F32(bwd_top_diff_int_l));
+                printf(\"reluGradSize Error: %%d, %%d\\n\",dnnLayoutGetMemorySize_%(precision)s(bwd_bottom_diff_int_l),dnnLayoutGetMemorySize_%(precision)s(bwd_top_diff_int_l));
 
             }
 
@@ -395,11 +430,11 @@ class ReluGrad(Op):
 	      std::cout<<"relu bwd, relu_res[dnnResourceSrc]:"<<relu_res[dnnResourceSrc]<<std::endl;
 	      std::cout<<"relu bwd, relu_res[dnnResourceDiffSrc]:"<<relu_res[dnnResourceDiffSrc]<<std::endl;
 	      std::cout<<"relu bwd, relu_res[dnnResourceDiffDst]:"<<relu_res[dnnResourceDiffDst]<<std::endl;
-	      std::cout<<"relu bwd, input size:"<<dnnLayoutGetMemorySize_F32(bwd_bottom_diff_int_l)<<std::endl;
-	      std::cout<<"relu bwd, output size:"<<dnnLayoutGetMemorySize_F32(bwd_top_diff_int_l)<<std::endl;
+	      std::cout<<"relu bwd, input size:"<<dnnLayoutGetMemorySize_%(precision)s(bwd_bottom_diff_int_l)<<std::endl;
+	      std::cout<<"relu bwd, output size:"<<dnnLayoutGetMemorySize_%(precision)s(bwd_top_diff_int_l)<<std::endl;
             #endif
 
-            e = dnnExecute_F32(reluBwd, relu_res);
+            e = dnnExecute_%(precision)s(reluBwd, relu_res);
             if (E_SUCCESS != e){
                 std::cout<<"relu bwd execute failed, e="<<e<<std::endl;
             }
@@ -413,8 +448,8 @@ class ReluGrad(Op):
           #endif
             first_run = 0;
             }
-            """ % locals()
-      return ret
+            """ % sub
+        return ret
 
     def c_code_cache_version(self):
         return (0, 1, self.uniq_id)
