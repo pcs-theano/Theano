@@ -36,10 +36,6 @@ def register_opt(*tags, **kwargs):
 _logger_name = 'theano.sandbox.mkl'
 _logger = logging.getLogger(_logger_name)
 
-# This variable is True by default, and set to False if mkl library
-# is not found on the platform
-mkl_available = True
-
 
 class MKLVersion(gof.Op):
     def c_headers(self):
@@ -103,59 +99,53 @@ def mkl_available():
         mkl_available.msg = "MKL is disabled since device is not CPU"
         return mkl_available.avail
 
-    if mkl_available.avail is None:
-        preambule = """
-            #include <stdio.h>
-        """
-        preambule += textwrap.dedent(mkl_helper.header_text())
+    if (config.dnn.enabled == "auto" and config.device == "cpu") or config.dnn.enabled == "mkl":
+        if mkl_available.avail is None:
+            preambule = """
+                #include <stdio.h>
+             """
+            preambule += textwrap.dedent(mkl_helper.header_text())
 
-        body = textwrap.dedent(
-            """
-            dnnError_t err;
-            dnnLayout_t usr_layout = NULL;
-            size_t size[1] = {256};
-            size_t stride[1] = {1};
+            body = textwrap.dedent(
+                """
+                dnnError_t err;
+                dnnLayout_t usr_layout = NULL;
+                size_t size[1] = {256};
+                size_t stride[1] = {1};
 
-            if ((err = dnnLayoutCreate_F32(&usr_layout, 1, size, stride)) != E_SUCCESS) {
-                fprintf(stderr, "Failed to create user layout with mkl: %s", err);
-                return (-1);
-            }
-            """)
-        params = ["-l", "mkl_rt"]
+                if ((err = dnnLayoutCreate_F32(&usr_layout, 1, size, stride)) != E_SUCCESS) {
+                    fprintf(stderr, "Failed to create user layout with mkl: %s", err);
+                    return (-1);
+                }
+                """)
+            params = [theano.config.blas.ldflags]
 
-        # Do not run here the test program. It would run on the
-        # default gpu, not the one selected by the user. If mixed
-        # GPU are installed or if the GPUs are configured in
-        # exclusive mode, this cause bad detection.
-        comp, out, err = Compiler._try_flags(
-            flag_list=params, preambule=preambule, body=body,
-            try_run=False, output=True, compiler=theano.config.cxx, comp_args=False)
+            comp, out, err = Compiler._try_flags(
+                flag_list=params, preambule=preambule, body=body,
+                try_run=False, output=True, compiler=theano.config.cxx, comp_args=False)
 
-        mkl_available.avail = comp
-        if not mkl_available.avail:
-            mkl_available.msg = (
-                "Can not compile with mkl. We got this error:\n" +
-                str(err))
-        else:
-            # If we can compile, check that we can import and run.
-            v = mkl_version()
-            if not isinstance(v, integer_types):
-                mkl_available.avail = False
-                mkl_available.msg = ("Got incorrect mkl version format")
-                raise RuntimeError(mkl_available.msg)
-            if v == -1 or v < 20160701:  # FIXME, check the version for first mkl primitive
-                mkl_available.avail = False
-                mkl_available.msg = "Version(%d) is too old, please update the newer one after version %d." % (v, int(20160701))  # FIXME, check the version for the first mkl primitive
-                raise RuntimeError(mkl_available.msg)
+            mkl_available.avail = comp
+            if not mkl_available.avail:
+                mkl_available.msg = (
+                    "Can not compile with MKL. We got this error:\n" +
+                    str(err))
             else:
-                mkl_available.avail = comp
+                # If we can compile, check that we can import and run.
+                v = mkl_version()
+                if not isinstance(v, integer_types):
+                    mkl_available.avail = False
+                    mkl_available.msg = ("Got incorrect mkl version format")
+                    raise RuntimeError(mkl_available.msg)
+                if v == -1 or v < 20160701:  # FIXME, check the version for first mkl primitive
+                    mkl_available.avail = False
+                    mkl_available.msg = "Version(%d) is too old, please update the newer one after version %d." % (v, int(20160701))  # FIXME, check the version for the first mkl primitive
+                    raise RuntimeError(mkl_available.msg)
+                else:
+                    mkl_available.avail = comp
+        else:
+            return mkl_available.avail
 
     '''
-    if config.dnn.enabled == "mkl":
-        if not mkl_available.avail:
-            raise NotImplemented(
-                "mkl is not supported, %s" % mkl_available.msg)
-
     ## leave mkl-dnn here for future use
     if config.dnn.enabled == "mkl-dnn":
         if not mkl_available.avail:

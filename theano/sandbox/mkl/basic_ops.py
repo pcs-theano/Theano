@@ -3,6 +3,7 @@ from theano.gof import Apply, Op
 from theano.tensor.blas import ldflags
 from theano.sandbox.mkl import mkl_helper
 from theano.sandbox.mkl import mkl_available, mkl_version
+from theano.gradient import DisconnectedType
 
 
 class MKLOp(Op):
@@ -79,8 +80,9 @@ class U2I_Pool(MKLOp):
     def grad(self, inp, grads):
         x, ws, stride, pad = inp
         gz, = grads
+        disc = [DisconnectedType()() for i in inp[1:]]
 
-        return [U2IGrad(uniq_id=self.uniq_id)(x, gz)]
+        return [U2IGrad(uniq_id=self.uniq_id)(x, gz)] + disc
 
     # def c_cleanup_code_struct(self, node, name):
     #    pass

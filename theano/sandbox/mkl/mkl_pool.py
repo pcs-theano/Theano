@@ -10,6 +10,7 @@ import theano
 from theano.tensor.blas import ldflags
 from theano import gof, OpenMPOp, tensor, Variable, Apply
 from theano.sandbox.mkl import mkl_helper
+from theano.gradient import DisconnectedType
 
 class poolBase(OpenMPOp):
     def __init__(self, ignore_border=True, mode='max', openmp=None):
@@ -126,8 +127,8 @@ class poolBase(OpenMPOp):
             static dnnPrimitive_t cvt_from_int_output = NULL;
             static dnnPrimitive_t convert_int2int_input = NULL;
 
-            static void* bp[3];
-            static void *ip = NULL;
+            static void *workspace_ptr_ptr[2];
+            static void *workspace_ptr = NULL;
             ////END
         """ % sub
         return ccode
@@ -286,7 +287,7 @@ class pool(poolBase):
 
         broad = x.broadcastable[:2] + (False, False)
         out = tensor.TensorType(x.dtype, broad)
-        return gof.Apply(self, [x, ws, stride, pad], [out()])
+        return Apply(self, [x, ws, stride, pad], [out()])
 
     def infer_shape(self, node, in_shapes):
         ws, stride, pad = [node.inputs[1], node.inputs[2], node.inputs[3]]
@@ -296,10 +297,11 @@ class pool(poolBase):
     def grad(self, inp, grads):
         x, ws, stride, pad = inp
         gz, = grads
+        disc = [DisconnectedType()() for i in inp[1:]]
 
         return [poolGrad(ignore_border=self.ignore_border,
                          mode=self.mode,
-                         uniq_id=uniq_id)(x, gz, ws, stride, pad)]
+                         uniq_id=self.uniq_id)(x, gz, ws, stride, pad)] + disc
 
     def c_code(self, node, name, inp, out, sub):
         x, ws, stride, pad = inp
@@ -338,9 +340,10 @@ class pool(poolBase):
         #if __DEBUG__
         std::cout<<"pool start"<<std::endl;
         #endif
-        if (1 == first_run) {
-            ((void **)PyArray_DATA(%(x)s))[2] = (void*)bp;
+            ((void **)PyArray_DATA(%(x)s))[2] = (void*)workspace_ptr_ptr;
+            printf(\"pool workspace_ptr_ptr:%%x\\n\",workspace_ptr_ptr);
 
+        if (1 == first_run) {
             size_t kernel_h = *((npy_intp*)PyArray_GETPTR1(%(ws)s, 0));
             size_t kernel_w = *((npy_intp*)PyArray_GETPTR1(%(ws)s, 1));
             size_t stride_h = *((npy_intp*)PyArray_GETPTR1(%(stride)s, 0));
@@ -436,8 +439,8 @@ class pool(poolBase):
             CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&workspace_buffer_ptr, int_layout_workspace) , err );
         }
         pool_res[dnnResourceWorkspace] = workspace_buffer_ptr;
-        ((dnnLayout_t**)bp)[0] = &int_layout_workspace;
-        ((void**)bp)[1] = workspace_buffer_ptr;
+        ((dnnLayout_t**)workspace_ptr_ptr)[0] = &int_layout_workspace;
+        ((void**)workspace_ptr_ptr)[1] = workspace_buffer_ptr;
 
         npy_intp out_dim[4];
         out_dim[0] = outputSize[3];
@@ -673,9 +676,10 @@ class poolGrad(poolBase):
         #if __DEBUG__
         std::cout<<"poolgrad start"<<std::endl;
         #endif
-        if (1 == first_run) {
-            ip = ((void**)PyArray_DATA(%(x)s))[2];
+            workspace_ptr = ((void**)PyArray_DATA(%(x)s))[2];
+            printf("workspace_ptr=0x%%x\\n", workspace_ptr);
 
+        if (1 == first_run) {
             size_t kernel_h = *((npy_intp*)PyArray_GETPTR1(%(ws)s, 0));
             size_t kernel_w = *((npy_intp*)PyArray_GETPTR1(%(ws)s, 1));
             size_t stride_h = *((npy_intp*)PyArray_GETPTR1(%(stride)s, 0));
@@ -790,9 +794,9 @@ class poolGrad(poolBase):
         gz_int_layout_from_other = ((dnnLayout_t*)PyArray_DATA(%(gz)s))[0];
         gz_buffer_ptr = ((void **)PyArray_DATA(%(gz)s))[1];
       
-        int_layout_workspace_p = ((dnnLayout_t**)ip)[0];
+        int_layout_workspace_p = ((dnnLayout_t**)workspace_ptr)[0];
         int_layout_workspace = *int_layout_workspace_p;
-        pool_res[dnnResourceWorkspace] = ((void**)ip)[1];
+        pool_res[dnnResourceWorkspace] = ((void**)workspace_ptr)[1];
 
         if(first_run ==1)
         { 

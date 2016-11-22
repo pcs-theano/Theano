@@ -1,3 +1,16 @@
+Date: 2016/11/22
+Changes:
+----------------------------------
+1. Fix the issue of U2I_Pool and pool Gradient error
+2. Add FP64 support in mkl_relu, and format it from dos to unix 
+
+
+Date: 2016/11/21
+Changes:
+----------------------------------
+1. Fix the issue of error result from mkl_available() when it's executed multiple times.
+
+
 Date: 2016/11/19
 Changes:
 ----------------------------------
