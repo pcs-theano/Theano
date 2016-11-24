@@ -336,6 +336,10 @@ class SoftmaxGrad(gof.Op):
     def infer_shape(self, node, shape):
         return [shape[1]]
 
+    def c_headers(self):
+        return ['"omp.h"']
+
+
     def c_code_cache_version(self):
         return (3,)
 
@@ -384,7 +388,11 @@ class SoftmaxGrad(gof.Op):
             }
         }
 
-        for (size_t i = 0; i < PyArray_DIMS(%(dx)s)[0]; ++i)
+        int num_proc = omp_get_num_procs();
+        #pragma omp parallel num_threads(num_proc)
+        {
+        int tid = omp_get_thread_num();
+        for (size_t i = tid; i < PyArray_DIMS(%(dx)s)[0]; i+=num_proc)
         {
             const dtype_%(dy)s* __restrict__ dy_i = (dtype_%(dy)s*) (PyArray_BYTES(%(dy)s) + PyArray_STRIDES(%(dy)s)[0] * i);
             npy_intp Sdy = PyArray_STRIDES(%(dy)s)[1]/sizeof(dtype_%(dy)s);
@@ -403,6 +411,7 @@ class SoftmaxGrad(gof.Op):
             {
                 dx_i[j * Sdx] -= sum_dy_times_sm * sm_i[j * Ssm];
             }
+        }
         }
         ''' % dict(locals(), **sub)
 softmax_grad = SoftmaxGrad()
@@ -456,7 +465,7 @@ class Softmax(gof.Op):
         return shape
 
     def c_headers(self):
-        return ['<iostream>', '<cmath>']
+        return ['<iostream>', '<cmath>', '"omp.h"']
 
     @staticmethod
     def c_code_template(dtype):
@@ -504,7 +513,11 @@ class Softmax(gof.Op):
         """
 
         begin_row_loop = """
-        for (size_t i = 0; i < Nx[0]; ++i)
+        int num_proc = omp_get_num_procs();
+        #pragma omp parallel num_threads(num_proc)
+        {
+        int tid = omp_get_thread_num();
+        for (size_t i = tid; i < Nx[0]; i+=num_proc)
         {
             size_t j;
             double sum = 0.0;
@@ -537,11 +550,11 @@ class Softmax(gof.Op):
 
             //cblas_dscal(x.N, 1.0 / sum, &mat_at(s,i,0), s.n);
             double sum_inv = 1.0 / sum;
+
             for (j = 0; j < Nx[1]; ++j)
             {
                 sm_i[j * Ssm1] *= sum_inv;
             }
-
         """
         # Get the vectorized version of exp if it exist
         try:
@@ -578,6 +591,7 @@ class Softmax(gof.Op):
             pass
 
         end_row_loop = """
+        }
         }
         """
         return (init_decl, begin_row_loop, inside_row_loop, end_row_loop)
