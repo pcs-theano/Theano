@@ -59,6 +59,9 @@ class AbstractLRNGrad(gof.Op):
 
 
 def lrn(x, slope=1, alpha=1e-4, beta=0.75, k=2, n=5):
+    if theano.sandbox.mkl.mkl_available.avail is None:
+        theano.sandbox.mkl.mkl_available()
+
     if (theano.sandbox.mkl.mkl_available.avail is True) and (x.type.ndim == 4):
         return AbstractLRN(slope, alpha, beta, k, n)(x)
     else:
