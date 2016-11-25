@@ -5,8 +5,8 @@ from theano import gof
 from theano.tensor import basic as tensor
 
 
-class LRN(gof.Op):
-    __props__ = ('slope',)
+class AbstractLRN(gof.Op):
+    __props__ = ('slope', 'alpha', 'beta', 'k', 'n')
 
     def __init__(self, slope=1, alpha=1e-4, beta=0.75, k=2, n=5):
         self.alpha = alpha
@@ -24,16 +24,19 @@ class LRN(gof.Op):
     def grad(self, inp, grads):
         x, = inp
         gz, = grads
-        return [LRNGrad(slope=self.slope)(x, gz)]
+        return [AbstractLRNGrad(slope=self.slope, 
+                                alpha=self.alpha,
+                                beta=self.beta,
+                                k=self.k,
+                                n=self.n)(x, gz)]
 
     def perform(self, node, inp, out_):
         x, = inp
         z, = out_
 
 
-
-class LRNGrad(gof.Op):
-    __props__ = ('slope',)
+class AbstractLRNGrad(gof.Op):
+    __props__ = ('slope', 'alpha', 'beta', 'k', 'n')
 
     def __init__(self, slope=1, alpha=1e-4, beta=0.75, k=2, n=5, fp='default.txt'):
         self.slope = slope
@@ -53,4 +56,12 @@ class LRNGrad(gof.Op):
         x, gz = inp
         gx, = out_
         gx = gz
+
+
+def lrn(x, slope=1, alpha=1e-4, beta=0.75, k=2, n=5):
+    if (theano.sandbox.mkl.mkl_available.avail is True) and (x.type.ndim == 4):
+        return AbstractLRN(slope, alpha, beta, k, n)(x)
+    else:
+        # TODO: need a numpy implement
+        raise NotImplementedError('LRN: MKL not available or dimension is wrong.')
 

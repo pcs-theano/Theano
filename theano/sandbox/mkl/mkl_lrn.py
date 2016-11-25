@@ -6,9 +6,9 @@ import theano
 from theano import gof, Op, tensor, Variable, Apply
 from theano.tensor import as_tensor_variable, TensorType
 from theano.tensor.blas import ldflags, blas_header_version
-from theano.sandbox.mkl import mkl_helper
+from theano.sandbox.mkl import mkl_helper, basic_ops
 
-class NormAcrossMap(Op):
+class LRN(basic_ops.MKLOp):
     """
     Local Response Normalization (Across Maps)
 
@@ -29,7 +29,7 @@ class NormAcrossMap(Op):
     beta :
     n    : indicates how many nearby maps to use for normalization.
     """
-
+    __props__ = ('uniq_id', 'alpha', 'beta', 'k', 'size')
     def __init__(self, uniq_id=0, alpha = 1e-4, beta = 0.75, k=2, n = 5):
         self.alpha = alpha
         self.beta = beta
@@ -39,11 +39,28 @@ class NormAcrossMap(Op):
         self.fp = 'p_lrn'+str(uniq_id)
 
     def __eq__(self, other):
-        return (type(self) == type(other) and self.alpha == other.alpha and self.beta == other.beta and self.size == other.size
-            and self.uniq_id == other.uniq_id)
+        if hasattr(self, '__props__'):
+            if type(self) != type(other):
+                return False
+            else:
+                self_props = [getattr(self, p) for p in self.__props__ if p != 'uniq_id']
+                other_props = [getattr(other, p) for p in other.__props__ if p != 'uniq_id']
+                if self_props == other_props:
+                    return True
+                else:
+                    return False
+        else:
+            return NotImplemented
 
     def __hash__(self):
-        return (hash(type(self)) ^ hash(self.alpha) ^ hash(self.beta) ^ hash(self.size) ^ hash(self.uniq_id))
+        return (hash(self.alpha) ^ hash(self.beta) ^ hash(self.k) ^ hash(self.size))
+
+    def __str__(self):
+        if hasattr(self, '__props__'):
+            return '%s{%s}' % (self.__class__.__name__,
+                            ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+        else:
+            return '%s' % (self.__class__.__name__)
 
     def make_node(self, x):
         if x.type.ndim != 4:
@@ -54,7 +71,7 @@ class NormAcrossMap(Op):
     def grad(self, inp, grads):
         x, = inp
         gz, = grads
-        return [NormAcrossMapGrad(uniq_id = self.uniq_id, alpha=self.alpha,
+        return [LRNGrad(uniq_id = self.uniq_id, alpha=self.alpha,
             beta=self.beta, k=self.k, n=self.size, fp=self.fp)(x, gz)]
 
     def c_support_code(self):
@@ -244,7 +261,7 @@ class NormAcrossMap(Op):
         return (0, 1, self.uniq_id)
 
 
-class NormAcrossMapGrad(Op):
+class LRNGrad(basic_ops.MKLOp):
     """
     Grad Function of NormAcrossMap
         roOut = gz * f(x)
@@ -257,6 +274,7 @@ class NormAcrossMapGrad(Op):
     n    : indicates how many nearby maps to use for normalization.
 
     """
+    __props__ = ('uniq_id', 'alpha', 'beta', 'k', 'size')
     def __init__(self, uniq_id=0, alpha=1e-4, beta=0.75, k=2, n=5, fp='default.txt'):
       self.alpha = alpha
       self.beta = beta
@@ -266,11 +284,28 @@ class NormAcrossMapGrad(Op):
       self.fp = fp
 
     def __eq__(self, other):
-      return (type(self) == type(other) and self.alpha == other.alpha and self.beta == other.beta and self.size == other.size and
-        self.uniq_id==other.uniq_id)
+        if hasattr(self, '__props__'):
+            if type(self) != type(other):
+                return False
+            else:
+                self_props = [getattr(self, p) for p in self.__props__ if p != 'uniq_id']
+                other_props = [getattr(other, p) for p in other.__props__ if p != 'uniq_id']
+                if self_props == other_props:
+                    return True
+                else:
+                    return False
+        else:
+            return NotImplemented
 
     def __hash__(self):
-        return (hash(type(self)) ^ hash(self.alpha) ^ hash(self.beta) ^ hash(self.size) ^ hash(self.uniq_id))
+        return (hash(self.alpha) ^ hash(self.beta) ^ hash(self.k) ^ hash(self.size))
+
+    def __str__(self):
+        if hasattr(self, '__props__'):
+            return '%s{%s}' % (self.__class__.__name__,
+                            ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+        else:
+            return '%s' % (self.__class__.__name__)
 
     def c_headers(self):
         return ['<math.h>', '<fstream>'] ##FIXME

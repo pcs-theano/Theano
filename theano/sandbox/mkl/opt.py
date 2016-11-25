@@ -23,9 +23,9 @@ from theano.sandbox.mkl.mkl_dummy import dummy_op
 from theano.sandbox.mkl.basic_ops import (U2IGrad,
                                           I2U,
                                           I2UGrad,
-                                          U2I_Pool,
-                                          U2I_Relu,
-                                          U2I_LRN
+                                          U2IPool,
+                                          U2IRelu,
+                                          U2ILRN
                                           )
 from theano.sandbox.mkl import mkl_relu
 from theano.sandbox.mkl import mkl_pool
@@ -34,7 +34,7 @@ from theano.sandbox.mkl import mkl_lrn
 from theano.tensor.signal import pool
 from theano.tensor.nnet.nnet import (AbstractRelu, AbstractReluGrad)
 
-import theano.tensor.nnet.lrn as lrn
+from theano.tensor.nnet.lrn import (AbstractLRN, AbstractLRNGrad)
 
 # uniq_id for all the mkl Ops, to differentiate different layer even they've same parameters.
 uniq_id = 0
@@ -63,15 +63,28 @@ class Cut_I2U_U2I(Optimizer):
     def apply(self, fgraph):
         print("@global opt:Cut_I2U_U2I ")
         list_i2u = ['I2U']
-        list_u2i = ['U2I_Pool', 'U2I_Relu', 'U2I_Conv']
+        list_u2i = ['U2IPool', 'U2IRelu', 'U2IConv']
+        list_i2u_back = ['I2UGrad']
+        list_u2i_back = ['U2IGrad']
+        list_forward = ['Relu', 'Pool', 'Conv']
+        list_backward = ['ReluGrad', 'PoolGrad', 'ConvGrad']
         for node in fgraph.toposort():
+            # backward
+            if node.op.__class__.__name__ in list_i2u_back:
+                out = node.outputs[0]
+                for inp in node.inputs:
+                    if isinstance(inp.owner, gof.Apply) and inp.owner.op.__class__.__name__ in list_u2i_back:
+                        for inpOP in list(inp.owner.inputs):
+                            if isinstance(inpOP.owner, gof.Apply) and inpOP.owner.op.__class__.__name__ in list_backward:
+                                fgraph.replace_validate(out, inpOP.owner.outputs[0])
+            # forward
             if node.op.__class__.__name__ in list_u2i:
-                # TODO: need another loop to iterate all outputs
                 out  = node.outputs[0]
                 for inp in node.inputs:
                     if isinstance(inp.owner, gof.Apply) and inp.owner.op.__class__.__name__ in list_i2u:
-                        internal_inp = inp.owner.inputs[0]
-                        fgraph.replace_validate(out, internal_inp)
+                        for inpOP in list(inp.owner.inputs):
+                            if isinstance(inpOP.owner, gof.Apply) and inpOP.owner.op.__class__.__name__ in list_forward:
+                                fgraph.replace_validate(out, inpOP.owner.outputs[0])
 
 
 
@@ -112,10 +125,10 @@ def local_pool_mkl(node):
     if stride is None:
         stride = ws
 
-    x_u2i = U2I_Pool(ignore_border=node.op.ignore_border,
+    x_u2i = U2IPool(ignore_border=node.op.ignore_border,
                      mode=node.op.mode,
                      uniq_id=uniq_id)(x, ws, stride, pad)
-    poolOut = mkl_pool.pool(ignore_border=node.op.ignore_border,
+    poolOut = mkl_pool.Pool(ignore_border=node.op.ignore_border,
                             mode=node.op.mode,
                             uniq_id=uniq_id)(x_u2i, ws, stride, pad)
     z_i2u = I2U(uniq_id=uniq_id)(poolOut)
@@ -148,15 +161,15 @@ def local_poolGrad_mkl(node):
     if stride is None:
         stride = ws
 
-    x_u2i = U2I_Pool(ignore_border=node.op.ignore_border,
+    x_u2i = U2IPool(ignore_border=node.op.ignore_border,
                      mode=node.op.mode,
                      uniq_id=uniq_id)(x, ws, stride, pad)
-    poolOut = mkl_pool.pool(ignore_border=node.op.ignore_border,
+    poolOut = mkl_pool.Pool(ignore_border=node.op.ignore_border,
                       mode=node.op.mode,
                       uniq_id=uniq_id)(x_u2i, ws, stride, pad)
     gz_u2i = I2UGrad(uniq_id=uniq_id)(poolOut, gz)
 
-    poolGradOut = mkl_pool.poolGrad(ignore_border=node.op.ignore_border,
+    poolGradOut = mkl_pool.PoolGrad(ignore_border=node.op.ignore_border,
                                     mode=node.op.mode,
                                     uniq_id=uniq_id)(x_u2i, gz_u2i, ws, stride, pad)
 
@@ -184,7 +197,7 @@ def local_relu_mkl(node):
 
     x, = node.inputs
 
-    x_u2i = U2I_Relu(slope=node.op.slope, uniq_id=uniq_id)(x)
+    x_u2i = U2IRelu(slope=node.op.slope, uniq_id=uniq_id)(x)
     reluOut = mkl_relu.Relu(slope=node.op.slope, uniq_id=uniq_id)(x_u2i)
     z_i2u = I2U(uniq_id=uniq_id)(reluOut)
 
@@ -211,7 +224,7 @@ def local_reluGrad_mkl(node):
     x, gz = node.inputs
 
 
-    x_u2i = U2I_Relu(slope=node.op.slope, uniq_id=uniq_id)(x)
+    x_u2i = U2IRelu(slope=node.op.slope, uniq_id=uniq_id)(x)
     reluOut = mkl_relu.Relu(slope=node.op.slope, uniq_id=uniq_id)(x_u2i)
     gz_u2i = I2UGrad(uniq_id=uniq_id)(x_u2i, gz)
 
@@ -227,7 +240,7 @@ def local_reluGrad_mkl(node):
 
 
 @register_opt()
-@local_optimizer([lrn.LRN])
+@local_optimizer([AbstractLRN])
 def local_lrn_mkl(node):
     print('@@local_lrn_mkl')
     global uniq_id
@@ -236,18 +249,18 @@ def local_lrn_mkl(node):
     if not mkl_available():
         return
 
-    if not isinstance(node.op, lrn.LRN):
+    if not isinstance(node.op, AbstractLRN):
         return
 
     x, = node.inputs
-    x_u2i = U2I_LRN(slope=node.op.slope, 
+    x_u2i = U2ILRN(slope=node.op.slope, 
                     uniq_id=uniq_id, 
                     alpha=node.op.alpha, 
                     beta=node.op.beta, 
                     k=node.op.k, 
                     n=node.op.n)(x)
 
-    lrnout = mkl_lrn.NormAcrossMap(uniq_id=uniq_id, 
+    lrnout = mkl_lrn.LRN(uniq_id=uniq_id, 
                                     alpha=node.op.alpha, 
                                     beta=node.op.beta, 
                                     k=node.op.k, 
@@ -259,7 +272,7 @@ def local_lrn_mkl(node):
 
 
 @register_opt()
-@local_optimizer([lrn.LRNGrad])
+@local_optimizer([AbstractLRNGrad])
 def local_lrnGrad_mkl(node):
     print('@@local_lrnGrad_mkl')
     global uniq_id
@@ -268,25 +281,25 @@ def local_lrnGrad_mkl(node):
     if not mkl_available():
         return
 
-    if not isinstance(node.op, lrn.LRNGrad):
+    if not isinstance(node.op, AbstractLRNGrad):
         return
 
     x, gz, = node.inputs
 
-    x_u2i = U2I_LRN(slope=node.op.slope, 
+    x_u2i = U2ILRN(slope=node.op.slope, 
                     uniq_id=uniq_id,
                     alpha=node.op.alpha,
                     beta=node.op.beta,
                     k=node.op.k,
                     n=node.op.n)(x)
-    lrnOut = mkl_lrn.NormAcrossMap(uniq_id=uniq_id,
+    lrnOut = mkl_lrn.LRN(uniq_id=uniq_id,
                                     alpha=node.op.alpha,
                                     beta=node.op.beta,
                                     k=node.op.k,
                                     n=node.op.n)(x_u2i)
     gz_u2i = I2UGrad(uniq_id=uniq_id)(x_u2i, gz)
     gz_u2i = I2UGrad(uniq_id=uniq_id)(lrnOut, gz)
-    lrnGradOut = mkl_lrn.NormAcrossMapGrad(uniq_id=uniq_id,
+    lrnGradOut = mkl_lrn.LRNGrad(uniq_id=uniq_id,
                                             alpha=node.op.alpha,
                                             beta=node.op.beta,
                                             k=node.op.k,

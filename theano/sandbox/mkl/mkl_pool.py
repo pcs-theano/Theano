@@ -12,9 +12,9 @@ from theano import gof, OpenMPOp, tensor, Variable, Apply
 from theano.sandbox.mkl import mkl_helper
 from theano.gradient import DisconnectedType
 
-class poolBase(OpenMPOp):
+class PoolBase(OpenMPOp):
     def __init__(self, ignore_border=True, mode='max', openmp=None):
-        super(poolBase, self).__init__(openmp=openmp)
+        super(PoolBase, self).__init__(openmp=openmp)
         
         if not ignore_border:
             raise NotImplementedError(
@@ -35,7 +35,7 @@ class poolBase(OpenMPOp):
 
     def c_compile_args(self):
         compile_args = ldflags(libs=False, flags=True)
-        compile_args += super(poolBase, self).c_compile_args()
+        compile_args += super(PoolBase, self).c_compile_args()
         return compile_args
 
     def c_lib_dirs(self):
@@ -46,7 +46,7 @@ class poolBase(OpenMPOp):
 
     def c_headers(self):
         headers = ['<stdio.h>', '<fstream>']
-        headers += super(poolBase, self).c_headers()
+        headers += super(PoolBase, self).c_headers()
         return headers
 
     def c_support_code(self):
@@ -158,7 +158,7 @@ class poolBase(OpenMPOp):
         return ccode
 
 
-class pool(poolBase):
+class Pool(PoolBase):
     """
     For N-dimensional tensors, consider that the last two dimensions span
     images. This Op downsamples these images by taking the max, sum or average
@@ -190,8 +190,32 @@ class pool(poolBase):
     __props__ = ('ignore_border', 'mode', 'uniq_id')
 
     def __init__(self, ignore_border=True, mode='max', openmp=None, uniq_id=0):
-        super(pool, self).__init__(ignore_border, mode, openmp)
+        super(Pool, self).__init__(ignore_border, mode, openmp)
         self.uniq_id =  uniq_id
+
+    def __eq__(self, other):
+        if hasattr(self, '__props__'):
+            if type(self) != type(other):
+                return False
+            else:
+                self_props = [getattr(self, p) for p in self.__props__ if p != 'uniq_id']
+                other_props = [getattr(other, p) for p in other.__props__ if p != 'uniq_id']
+                if self_props == other_props:
+                    return True
+                else:
+                    return False
+        else:
+            return NotImplemented
+
+    def __hash__(self):
+        return hash(self.ignore_border) ^ hash(self.mode)
+
+    def __str__(self):
+        if hasattr(self, '__props__'):
+            return '%s{%s}' % (self.__class__.__name__,
+                            ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+        else:
+            return '%s' % (self.__class__.__name__)
 
     @staticmethod
     def out_shape(imgshape, ds, ignore_border=False, st=None, padding=(0, 0)):
@@ -465,7 +489,7 @@ class pool(poolBase):
                                               0);
             if (NULL == %(z)s) {
                 PyErr_Format(PyExc_RuntimeError,
-                            "poolBase: Failed to allocate output of %%lld x %%lld x %%lld x %%lld",
+                            "PoolBase: Failed to allocate output of %%lld x %%lld x %%lld x %%lld",
                             (long long)out_dim[0], (long long)out_dim[1], (long long)out_dim[2], (long long)out_dim[3]);
                 %(fail)s
             }
@@ -531,12 +555,36 @@ class pool(poolBase):
         return (0, 6, 8, 4, self.openmp, self.uniq_id)
 
 
-class poolGrad(poolBase):
+class PoolGrad(PoolBase):
     __props__ = ('ignore_border', 'mode', 'uniq_id')
 
     def __init__(self, ignore_border=False, mode='max', openmp=None, uniq_id=0):
-        super(poolGrad, self).__init__(ignore_border, mode, openmp)
+        super(PoolGrad, self).__init__(ignore_border, mode, openmp)
         self.uniq_id = uniq_id
+
+    def __eq__(self, other):
+        if hasattr(self, '__props__'):
+            if type(self) != type(other):
+                return False
+            else:
+                self_props = [getattr(self, p) for p in self.__props__ if p != 'uniq_id']
+                other_props = [getattr(other, p) for p in other.__props__ if p != 'uniq_id']
+                if self_props == other_props:
+                    return True
+                else:
+                    return False
+        else:
+            return NotImplemented
+
+    def __hash__(self):
+        return hash(self.ignore_border) ^ hash(self.mode)
+
+    def __str__(self):
+        if hasattr(self, '__props__'):
+            return '%s{%s}' % (self.__class__.__name__,
+                            ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+        else:
+            return '%s' % (self.__class__.__name__)
 
     @staticmethod
     def out_shape(imgshape, ds, ignore_border=False, st=None, padding=(0, 0)):

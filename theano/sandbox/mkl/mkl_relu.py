@@ -6,41 +6,37 @@ import theano.tensor as T
 from theano import gof, Op, tensor, Variable, Apply
 from theano.tensor import as_tensor_variable, TensorType
 from theano.tensor.blas import ldflags, blas_header_version
-from theano.sandbox.mkl import mkl_helper
+from theano.sandbox.mkl import mkl_helper, basic_ops
 
-class Relu(Op):
-    """
-    Local Response Normalization (Across Maps)
-
-    Refer to the below link for the definition of LRN
-        https://code.google.com/p/cuda-convnet/wiki/LayerParams#Local_
-        response_normalization_layer_(across_maps)
-
-    The activity of a neuron is divided only by the "adjacent" of activities
-    which are in the same spatial postion but in different maps (channels).
-    'c' stands for current channel index.
-
-        F[c][x,y] = (1 + (alpha*1.0/n) * sum(F[c - n/2][x,y]^2,
-                    F[c + n/2][x,y]^2))^beta
-    
-    Parameters
-    ----------
-    alpha:
-    beta :
-    n    : indicates how many nearby maps to use for normalization.
-    """
-
+class Relu(basic_ops.MKLOp):
+    __props__ = ('slope', 'uniq_id')
     def __init__(self, slope=0, uniq_id=0):
         self.slope = slope
         self.uniq_id = uniq_id
 
     def __eq__(self, other):
-        return (type(self) == type(other) and
-                self.slope == other.slope and
-                self.uniq_id == other.uniq_id)
+        if hasattr(self, '__props__'):
+            if type(self) != type(other):
+                return False
+            else:
+                self_props = [getattr(self, p) for p in self.__props__ if p != 'uniq_id']
+                other_props = [getattr(other, p) for p in other.__props__ if p != 'uniq_id']
+                if self_props == other_props:
+                    return True
+                else:
+                    return False
+        else:
+            return NotImplemented
 
     def __hash__(self):
-        return (hash(type(self)) ^ hash(self.slope) ^ hash(self.uniq_id))
+        return hash(self.slope)
+
+    def __str__(self):
+        if hasattr(self, '__props__'):
+            return '%s{%s}' % (self.__class__.__name__,
+                                ','.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+        else:
+            return '%s' % (self.__class__.__name__)
 
     def make_node(self, x):
         if x.type.ndim != 4:
@@ -248,29 +244,35 @@ class Relu(Op):
         return (0, 1, self.uniq_id)
 
 
-class ReluGrad(Op):
-    """
-    Grad Function of NormAcrossMap		
-        roOut = gz * f(x)
-        f(x) = 1/(1 + (alpha/n)*sum(x*x))**beta - 2*x*alpha*beta*sum(x)/(1+(alpha/n)*sum(x*x))**(beta+1)
-
-    Parameters
-    ----------
-    alpha:
-    beta :
-    n    : indicates how many nearby maps to use for normalization.
-
-    """
+class ReluGrad(basic_ops.MKLOp):
+    __props__ = ('slope', 'uniq_id')
     def __init__(self, slope=1, uniq_id=0):
         self.slope = slope
         self.uniq_id = uniq_id
 
     def __eq__(self, other):
-      return (type(self) == type(other) and self.slope == other.slope and 
-        self.uniq_id == other.uniq_id)
+        if hasattr(self, '__props__'):
+            if type(self) != type(other):
+                return False
+            else:
+                self_props = [getattr(self, p) for p in self.__props__ if p != 'uniq_id']
+                other_props = [getattr(other, p) for p in other.__props__ if p != 'uniq_id']
+                if self_props == other_props:
+                    return True
+                else:
+                    return False
+        else:
+            return NotImplemented
 
     def __hash__(self):
-    	return (hash(type(self)) ^ hash(self.slope) ^ hash(self.uniq_id))
+        return hash(self.slope)
+
+    def __str__(self):
+        if hasattr(self, '__props__'):
+            return '%s{%s}' % (self.__class__.__name__,
+                                ','.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+        else:
+            return '%s' % (self.__class__.__name__)
 
     def c_headers(self):
         return ['<math.h>'] 

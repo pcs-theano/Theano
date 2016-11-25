@@ -56,13 +56,37 @@ class MKLOp(Op):
         return (1, 0, self.mklver, self.uniq_id)
 
 
-class U2I_Pool(MKLOp):
+class U2IPool(MKLOp):
     __props__ = ('ignore_border', 'mode', 'uniq_id')
 
     def __init__(self, ignore_border=False, mode='max', uniq_id=None):
-        super(U2I_Pool, self).__init__(uniq_id)
+        super(U2IPool, self).__init__(uniq_id)
         self.ignore_border = ignore_border
         self.mode = mode
+
+    def __eq__(self, other):
+        if hasattr(self, '__props__'):
+            if type(self) != type(other):
+                return False
+            else:
+                self_props = [getattr(self, p) for p in self.__props__ if p != 'uniq_id']
+                other_props = [getattr(other, p) for p in other.__props__ if p != 'uniq_id']
+                if self_props == other_props:
+                    return True
+                else:
+                    return False
+        else:
+            return NotImplemented
+
+    def __hash__(self):
+        return hash(self.ignore_border) ^ hash(self.mode)
+
+    def __str__(self):
+        if hasattr(self, '__props__'):
+            return '%s{%s}' % (self.__class__.__name__, 
+                                ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+        else:
+            return '%s' % (self.__class__.__name__)
 
     def make_node(self, x, ws, stride=None, pad=(0, 0)):
         x = T.as_tensor_variable(x)
@@ -189,6 +213,30 @@ class I2U(MKLOp):
     def __init__(self, uniq_id=None):
         super(I2U, self).__init__(uniq_id)
 
+    def __eq__(self, other):
+        if hasattr(self, '__props__'):
+            if type(self) != type(other):
+                return False
+            else:
+                self_props = [getattr(self, p) for p in self.__props__ if p != 'uniq_id']
+                other_props = [getattr(other, p) for p in other.__props__ if p != 'uniq_id']
+                if self_props == other_props:
+                    return True
+                else:
+                    return False
+        else:
+            return NotImplemented
+
+    def __hash__(self):
+        return hash(type(self))
+
+    def __str__(self):
+        if hasattr(self, '__props__'):
+            return '%s{%s}' % (self.__class__.__name__, 
+                                ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+        else:
+            return '%s' % (self.__class__.__name__)
+
     def make_node(self, x):
         x = T.as_tensor_variable(x)
         out = x.type()
@@ -269,12 +317,29 @@ class I2U(MKLOp):
         return ccode
 
 
-class U2I_Relu(MKLOp):
+class U2IRelu(MKLOp):
     __props__ = ('slope', 'uniq_id')
 
     def __init__(self, slope=1, uniq_id=None):
-        super(U2I_Relu, self).__init__(uniq_id)
+        self.uniq_id = uniq_id
         self.slope = slope
+
+    def __eq__(self, other):
+        if hasattr(self, '__props__'):
+            if type(self) != type(other):
+                return False
+            else:
+                self_props = [getattr(self, p) for p in self.__props__ if p != 'uniq_id']
+                other_props = [getattr(other, p) for p in other.__props__ if p != 'uniq_id']
+                if self_props == other_props:
+                    return True
+                else:
+                    return False
+        else:
+            return NotImplemented
+        
+    def __hash__(self):
+        return hash(self.slope)
 
     def make_node(self, x):
         x = T.as_tensor_variable(x)
@@ -360,26 +425,41 @@ class U2I_Relu(MKLOp):
                 ((void**)PyArray_DATA(%(z)s))[1] = internal_ptr;
 
         #ifdef __DEBUG__
-            printf(\"U2I_Relu: from_buffer %%x to_buffer %%x\\n\",convert_resources[dnnResourceFrom],convert_resources[dnnResourceTo]);
+            printf(\"U2IRelu: from_buffer %%x to_buffer %%x\\n\",convert_resources[dnnResourceFrom],convert_resources[dnnResourceTo]);
         #endif
 
         """ % locals()
         return ccode
 
 
-class U2IGrad(Op):
+class U2IGrad(MKLOp):
+    __props__ = ('uniq_id',)
     def __init__(self, uniq_id=None):
         self.uniq_id = uniq_id
+    
+    def __eq__(self, other):
+        if hasattr(self, '__props__'):
+            if type(self) != type(other):
+                return False
+            else:
+                self_props = [getattr(self, p) for p in self.__props__ if p != 'uniq_id']
+                other_props = [getattr(other, p) for p in other.__props__ if p != 'uniq_id']
+                if self_props == other_props:
+                    return True
+                else:
+                    return False
+        else:
+            return NotImplemented
 
     def __hash__(self):
-        return hash(type(self)) ^ hash(self.uniq_id)
-
-    def __eq__(self, other):
-        return (type(self) == type(other) and
-                self.uniq_id == other.uniq_id)
+        return hash(type(self))
 
     def __str__(self):
-        return "U2IGrad"
+        if hasattr(self, '__props__'):
+            return '%s{%s}' % (self.__class__.__name__, 
+                                ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+        else:
+            return '%s' % (self.__class__.__name__)
 
     def c_code_cache_version(self):
         return (1, 0, self.uniq_id)
@@ -556,18 +636,34 @@ class U2IGrad(Op):
         return ccode
 
 
-class I2UGrad(Op):
+class I2UGrad(MKLOp):
+    __props__ = ('uniq_id',)
     def __init__(self, uniq_id=None):
         self.uniq_id = uniq_id
 
-    def __hash__(self):
-        return hash(type(self)) ^ hash(self.uniq_id)
-
     def __eq__(self, other):
-        return (type(self) == type(other) and self.uniq_id == other.uniq_id)
+        if hasattr(self, '__props__'):
+            if type(self) != type(other):
+                return False
+            else:
+                self_props = [getattr(self, p) for p in self.__props__ if p != 'uniq_id']
+                other_props = [getattr(other, p) for p in other.__props__ if p != 'uniq_id']
+                if self_props == other_props:
+                    return True
+                else:
+                    return False
+        else:
+            return NotImplemented
+
+    def __hash__(self):
+        return hash(type(self))
 
     def __str__(self):
-        return "I2UGrad"
+        if hasattr(self, '__props__'):
+            return '%s{%s}' % (self.__class__.__name__, 
+                                ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+        else:
+            return '%s' % (self.__class__.__name__)
 
     def c_code_cache_version(self):
         return (1, 0, self.uniq_id)
@@ -781,16 +877,39 @@ class I2UGrad(Op):
         return ccode
 
 
-class U2I_LRN(MKLOp):
-    __props__ = ('slope', 'uniq_id')
-
+class U2ILRN(MKLOp):
+    __props__ = ('slope', 'alpha', 'beta', 'k', 'size', 'uniq_id')
     def __init__(self, slope=1, uniq_id=None, alpha=1e-4, beta=0.75, k=2, n=5):
-        super(U2I_LRN, self).__init__(uniq_id)
+        self.uniq_id = uniq_id
         self.slope = slope
         self.alpha = alpha
         self.beta = beta
         self.k = k
         self.size = n
+    
+    def __eq__(self, other):
+        if hasattr(self, '__props__'):
+            if type(self) != type(other):
+                return False
+            else:
+                self_props = [getattr(self, p) for p in self.__props__ if p != 'uniq_id']
+                other_props = [getattr(other, p) for p in other.__props__ if p != 'uniq_id']
+                if self_props == other_props:
+                    return True
+                else:
+                    return False
+        else:
+            return NotImplemented
+
+    def __hash__(self):
+        return hash(self.slope) ^ hash(self.alpha) ^ hash(self.beta) ^ hash(self.k) ^ hash(self.size)
+
+    def __str__(self):
+        if hasattr(self, '__props__'):
+            return '%s{%s}' % (self.__class__.__name__, 
+                                ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+        else:
+            return '%s' % (self.__class__.__name__)
 
     def make_node(self, x):
         x = T.as_tensor_variable(x)
@@ -871,7 +990,6 @@ class U2I_LRN(MKLOp):
             {
                 internal_ptr = (PyArray_DATA(%(x)s));
             }
-            
             if (layout_int != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
             {
                 ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_int;

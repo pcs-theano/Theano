@@ -1,30 +1,19 @@
+from __future__ import absolute_import, print_function, division
 
-
-import theano
-from theano import tensor as T
-
-import theano.sandbox.mkl
-import theano.tensor.nnet
-import theano.tensor.nnet.lrn
-from theano.tensor.nnet.lrn import LRN
+from nose.plugins.skip import SkipTest
+from itertools import product
+import os
+import unittest
+from six import reraise
+from six.moves import cPickle
+import six.moves.builtins as builtins
+import sys
 
 import numpy
+import math
 
-x = T.ftensor4()
-y = LRN()(x)
+import theano
+import theano.tensor as tensor
+from theano.tests import unittest_tools as utt
 
-# forward
-theano.printing.pydotprint(y, outfile='lrn_fwd_before.png', var_with_name_simple=True)
-f = theano.function([x], y)
-theano.printing.pydotprint(f, outfile='lrn_fwd_after.png', var_with_name_simple=True)
-
-# backward
-z = T.grad(T.sum(y), [x])
-theano.printing.pydotprint(z, outfile='lrn_bwd_before.png', var_with_name_simple=True)
-f1 = theano.function([x], z)
-theano.printing.pydotprint(f1, outfile='lrn_bwd_after.png', var_with_name_simple=True)
-
-# random
-imval = numpy.random.rand(4, 2, 4, 4).astype(numpy.float32)
-f(imval)
-f1(imval)
+from theano import function

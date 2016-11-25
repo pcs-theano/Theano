@@ -14,10 +14,10 @@ from theano import gof
 from theano.tensor import as_tensor_variable, TensorType
 from theano.tensor.nnet.abstract_conv import get_conv_output_shape
 from theano.tensor.blas import ldflags, blas_header_version
-from theano.sandbox.mkl import mkl_helper
+from theano.sandbox.mkl import mkl_helper, basic_ops
 
 
-class MKLConvBase(gof.Op):
+class MKLConvBase(basic_ops.MKLOp):
     __props__ = ('imshp', 'kshp', 'border_mode', 'subsample', 'uniq_id')
 
     def __init__(self, imshp=None, kshp=None, border_mode="valid", subsample=(1, 1), uniq_id=0):
@@ -52,12 +52,30 @@ class MKLConvBase(gof.Op):
         self.kshp = kshp
         self.uniq_id = uniq_id
 
-    def __str__(self):
-        return '%s{%s, %s}' % (
-            self.__class__.__name__,
-            self.border_mode,
-            str(self.subsample))
+    def __eq__(self, other):
+        if hasattr(self, '__props__'):
+            if type(self) != type(other):
+                return False
+            else:
+                self_props = [getattr(self, p) for p in self.__props__ if p != 'uniq_id']
+                other_props = [getattr(other, p) for p in other.__Props__ if p != 'uniq_id']
+                if self_props == other_props:
+                    return True
+                else:
+                    return False
+        else:
+            return NotImplemented
 
+    def __hash__(self):
+        return hash(self.imshp) ^ hash(self. kshp) ^ hash(self.border_mode) ^ hash(subsample)
+
+    def __str__(self):
+        if hasattr(self, '__props__'):
+            return '%s{%s}' % (self.__class__.__name__,
+                            ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+        else:
+            return '%s' % (self.__class__.__name__)
+    
     def c_libraries(self):
         return ldflags()
 
