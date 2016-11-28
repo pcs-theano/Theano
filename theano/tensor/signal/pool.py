@@ -191,7 +191,7 @@ class Pool(OpenMPOp):
         out_c = numpy.ceil(((c + 2 * padding[1] - ds[1])) / (st[1])) + 1
 
         if padding[0]:
-            if isinstance(r, theano.Variable):
+            if isinstance(r, theano.Variable) or isinstance(out_r, theano.Variable):
                 out_r = tensor.switch(tensor.ge(((out_r - 1) * st[0]), (r + padding[0])),
                                       out_r - 1, out_r)
                 assert(tensor.lt(((out_r - 1) * st[0]), (r + padding[0])))
@@ -201,7 +201,7 @@ class Pool(OpenMPOp):
                 assert(((out_r - 1) * st[0]) < (r + padding[0]))
 
         if padding[1]:
-            if isinstance(r, theano.Variable):
+            if isinstance(c, theano.Variable) or isinstance(out_c, theano.Variable):
                 out_c = tensor.switch(tensor.ge(((out_c - 1) * st[1]), (c + padding[1])),
                                       out_c - 1, out_c)
                 assert(tensor.lt(((out_c - 1) * st[1]), (c + padding[1])))

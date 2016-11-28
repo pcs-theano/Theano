@@ -10,10 +10,8 @@ from theano.gof.cmodule import Compiler
 from theano.sandbox.mkl import mkl_helper
 
 # Patric:
-from theano.compat import get_unbound_function
 from theano.compile import optdb
 from theano.gof import EquilibriumDB, SequenceDB
-from theano.gof.cmodule import get_lib_extension
 
 # Init OPT for mkl
 mkl_optimizer = EquilibriumDB(ignore_newtrees=False)
@@ -83,6 +81,17 @@ mkl_version.v = None
 
 
 def mkl_available():
+    if config.device != "cpu":
+        mkl_available.avail = False
+        mkl_available.msg = "MKL is disabled since device is not CPU. " \
+                            "Set the device to 'CPU' if you want to use MKL."
+        return mkl_available.avail
+
+    if config.dnn.enabled == "False":
+        mkl_available.avail = False
+        mkl_available.msg = "MKL is disabled by the 'dnn.enable' setting."
+        return mkl_available.avail
+
     if config.dnn.enabled == "cudnn":
         if config.device == "cpu":
             mkl_available.avail = None
@@ -93,11 +102,6 @@ def mkl_available():
             mkl_available.avail = False
             mkl_available.msg = "Disabled by dnn.enabled flag"
             return mkl_available.avail
-
-    if config.dnn.enabled == "auto" and config.device != "cpu":
-        mkl_available.avail = False
-        mkl_available.msg = "MKL is disabled since device is not CPU"
-        return mkl_available.avail
 
     if (config.dnn.enabled == "auto" and config.device == "cpu") or config.dnn.enabled == "mkl":
         if mkl_available.avail is None:
@@ -154,10 +158,12 @@ def mkl_available():
     '''
     return mkl_available.avail
 
-# register name of 'mkl_opt' in opt.py and then add tags for it.
-if mkl_available:
-    from . import opt
-    optdb.add_tags('mkl_opt', 'fast_compile', 'fast_run')
 
 mkl_available.avail = None
 mkl_available.msg = None
+
+
+# register name of 'mkl_opt' in opt.py and then add tags for it.
+if mkl_available():
+    from . import opt
+    optdb.add_tags('mkl_opt', 'fast_compile', 'fast_run')

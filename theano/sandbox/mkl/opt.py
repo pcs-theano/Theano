@@ -42,7 +42,8 @@ uniq_id = 0
 # global OPT
 optdb.register('mkl_opt',
                mkl_seqopt,
-               optdb.__position__.get('add_destroy_handler', 49.5) - 1,
+               #optdb.__position__.get('add_destroy_handler', 49.5) - 1,
+               0.09,
                'mkl')
 
 # local OPT
@@ -118,6 +119,9 @@ def local_pool_mkl(node):
     if node.inputs[0].type.ndim != 4:
         return
 
+    if node.op.mode not in ('max', 'average_inc_pad', 'average_exc_pad'):
+        return
+
     if not node.op.ignore_border:
         return
 
@@ -126,8 +130,8 @@ def local_pool_mkl(node):
         stride = ws
 
     x_u2i = U2IPool(ignore_border=node.op.ignore_border,
-                     mode=node.op.mode,
-                     uniq_id=uniq_id)(x, ws, stride, pad)
+                    mode=node.op.mode,
+                    uniq_id=uniq_id)(x, ws, stride, pad)
     poolOut = mkl_pool.Pool(ignore_border=node.op.ignore_border,
                             mode=node.op.mode,
                             uniq_id=uniq_id)(x_u2i, ws, stride, pad)
@@ -153,6 +157,9 @@ def local_poolGrad_mkl(node):
     if node.inputs[0].type.ndim != 4:
         return
 
+    if node.op.mode not in ('max', 'average_inc_pad', 'average_exc_pad'):
+        return 
+
     # currently, MKL only support this mode
     if not node.op.ignore_border:
         return
@@ -162,8 +169,8 @@ def local_poolGrad_mkl(node):
         stride = ws
 
     x_u2i = U2IPool(ignore_border=node.op.ignore_border,
-                     mode=node.op.mode,
-                     uniq_id=uniq_id)(x, ws, stride, pad)
+                    mode=node.op.mode,
+                    uniq_id=uniq_id)(x, ws, stride, pad)
     poolOut = mkl_pool.Pool(ignore_border=node.op.ignore_border,
                       mode=node.op.mode,
                       uniq_id=uniq_id)(x_u2i, ws, stride, pad)
@@ -226,8 +233,6 @@ def local_reluGrad_mkl(node):
 
     x_u2i = U2IRelu(slope=node.op.slope, uniq_id=uniq_id)(x)
     reluOut = mkl_relu.Relu(slope=node.op.slope, uniq_id=uniq_id)(x_u2i)
-    gz_u2i = I2UGrad(uniq_id=uniq_id)(x_u2i, gz)
-
     gz_u2i = I2UGrad(uniq_id=uniq_id)(reluOut, gz)
 
     reluGradOut = mkl_relu.ReluGrad(slope=node.op.slope, uniq_id=uniq_id)(x_u2i, gz_u2i)
@@ -253,18 +258,18 @@ def local_lrn_mkl(node):
         return
 
     x, = node.inputs
-    x_u2i = U2ILRN(slope=node.op.slope, 
-                    uniq_id=uniq_id, 
-                    alpha=node.op.alpha, 
-                    beta=node.op.beta, 
-                    k=node.op.k, 
-                    n=node.op.n)(x)
+    x_u2i = U2ILRN(slope=node.op.slope,
+                   uniq_id=uniq_id,
+                   alpha=node.op.alpha,
+                   beta=node.op.beta,
+                   k=node.op.k,
+                   n=node.op.n)(x)
 
-    lrnout = mkl_lrn.LRN(uniq_id=uniq_id, 
-                                    alpha=node.op.alpha, 
-                                    beta=node.op.beta, 
-                                    k=node.op.k, 
-                                    n=node.op.n)(x_u2i)
+    lrnout = mkl_lrn.LRN(uniq_id=uniq_id,
+                         alpha=node.op.alpha,
+                         beta=node.op.beta,
+                         k=node.op.k,
+                         n=node.op.n)(x_u2i)
     z_i2u = I2U(uniq_id=uniq_id)(lrnout)
 
     rval = z_i2u
@@ -287,17 +292,16 @@ def local_lrnGrad_mkl(node):
     x, gz, = node.inputs
 
     x_u2i = U2ILRN(slope=node.op.slope, 
-                    uniq_id=uniq_id,
-                    alpha=node.op.alpha,
-                    beta=node.op.beta,
-                    k=node.op.k,
-                    n=node.op.n)(x)
+                   uniq_id=uniq_id,
+                   alpha=node.op.alpha,
+                   beta=node.op.beta,
+                   k=node.op.k,
+                   n=node.op.n)(x)
     lrnOut = mkl_lrn.LRN(uniq_id=uniq_id,
-                                    alpha=node.op.alpha,
-                                    beta=node.op.beta,
-                                    k=node.op.k,
-                                    n=node.op.n)(x_u2i)
-    gz_u2i = I2UGrad(uniq_id=uniq_id)(x_u2i, gz)
+                         alpha=node.op.alpha,
+                         beta=node.op.beta,
+                         k=node.op.k,
+                         n=node.op.n)(x_u2i)
     gz_u2i = I2UGrad(uniq_id=uniq_id)(lrnOut, gz)
     lrnGradOut = mkl_lrn.LRNGrad(uniq_id=uniq_id,
                                             alpha=node.op.alpha,
@@ -309,5 +313,3 @@ def local_lrnGrad_mkl(node):
 
     rval = gx_i2u
     return [rval]
-
-

@@ -269,7 +269,11 @@ from theano.sandbox.cuda.type import CudaNdarrayType
 
 
 def dnn_available():
-    #if config.dnn.enabled == "mkl" or config.dnn.enabled == "mkldnn":
+    if config.dnn.enabled == "False":
+        dnn_available.avail = False
+        dnn_available.msg = "Disabled by dnn.enabled flag"
+        return dnn_available.avail
+    # if config.dnn.enabled == "mkl" or config.dnn.enabled == "mkldnn":
     if config.dnn.enabled == "mkl":
         dnn_available.avail = False
         dnn_available.msg = "Disabled by dnn.enabled flag"

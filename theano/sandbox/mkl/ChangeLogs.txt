@@ -1,3 +1,13 @@
+Date: 2016/11/28
+Changes:
+----------------------------------
+1. Add "False" option for config.dnn.enabled, with "False" option, both CuDNN
+   and MKL dnn functionality module will not be used.
+2. Fix flake8 error of theano/sandbox/mkl/basic_ops.py
+3. Fix the typo in infer_shape of Pool and PoolGrad Ops.
+
+
+
 Date: 2016/11/25
 By lvtao
 Changes:

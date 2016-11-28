@@ -665,12 +665,13 @@ default_colorCodes = {'GpuFromHost': 'red',
                       'Subtensor': '#FFAAFF',  # purple
                       'Alloc': '#FFAA22',  # orange
                       'Output': 'blue',
-                      'U2I_Pool': '#FF8000',
-                      'U2I_Relu': '#FF8000',
-                      'U2I_Conv': '#FF8000',
-                      'U2I_LRN': '#FF8000',
+                      'U2IPool': '#FF8000',
+                      'U2IRelu': '#FF8000',
+                      'U2IConv': '#FF8000',
+                      'U2ILRN': '#FF8000',
                       'U2IGrad': '#FF8000',
                       'I2U': '#FF8000',
+                      'I2UGrad': '#FF8000',
                       }
 
 

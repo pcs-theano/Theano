@@ -2,7 +2,6 @@ import theano.tensor as T
 from theano.gof import Apply, Op
 from theano.tensor.blas import ldflags
 from theano.sandbox.mkl import mkl_helper
-from theano.sandbox.mkl import mkl_available, mkl_version
 from theano.gradient import DisconnectedType
 
 
@@ -83,8 +82,8 @@ class U2IPool(MKLOp):
 
     def __str__(self):
         if hasattr(self, '__props__'):
-            return '%s{%s}' % (self.__class__.__name__, 
-                                ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+            return '%s{%s}' % (self.__class__.__name__,
+                               ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
         else:
             return '%s' % (self.__class__.__name__)
 
@@ -200,7 +199,7 @@ class U2IPool(MKLOp):
                 ((void**)PyArray_DATA(%(z)s))[1] = internal_ptr;
 
         #ifdef __DEBUG__
-            printf(\"U2I_Pool: from_buffer %%x to_buffer %%x\\n\",convert_resources[dnnResourceFrom],convert_resources[dnnResourceTo]);
+            printf(\"U2IPool: from_buffer %%x to_buffer %%x\\n\",convert_resources[dnnResourceFrom],convert_resources[dnnResourceTo]);
         #endif
 
         """ % locals()
@@ -232,8 +231,8 @@ class I2U(MKLOp):
 
     def __str__(self):
         if hasattr(self, '__props__'):
-            return '%s{%s}' % (self.__class__.__name__, 
-                                ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+            return '%s{%s}' % (self.__class__.__name__,
+                               ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
         else:
             return '%s' % (self.__class__.__name__)
 
@@ -337,7 +336,7 @@ class U2IRelu(MKLOp):
                     return False
         else:
             return NotImplemented
-        
+
     def __hash__(self):
         return hash(self.slope)
 
@@ -434,9 +433,10 @@ class U2IRelu(MKLOp):
 
 class U2IGrad(MKLOp):
     __props__ = ('uniq_id',)
+
     def __init__(self, uniq_id=None):
         self.uniq_id = uniq_id
-    
+
     def __eq__(self, other):
         if hasattr(self, '__props__'):
             if type(self) != type(other):
@@ -456,8 +456,8 @@ class U2IGrad(MKLOp):
 
     def __str__(self):
         if hasattr(self, '__props__'):
-            return '%s{%s}' % (self.__class__.__name__, 
-                                ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+            return '%s{%s}' % (self.__class__.__name__,
+                               ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
         else:
             return '%s' % (self.__class__.__name__)
 
@@ -638,6 +638,7 @@ class U2IGrad(MKLOp):
 
 class I2UGrad(MKLOp):
     __props__ = ('uniq_id',)
+
     def __init__(self, uniq_id=None):
         self.uniq_id = uniq_id
 
@@ -660,8 +661,8 @@ class I2UGrad(MKLOp):
 
     def __str__(self):
         if hasattr(self, '__props__'):
-            return '%s{%s}' % (self.__class__.__name__, 
-                                ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+            return '%s{%s}' % (self.__class__.__name__,
+                               ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
         else:
             return '%s' % (self.__class__.__name__)
 
@@ -879,6 +880,7 @@ class I2UGrad(MKLOp):
 
 class U2ILRN(MKLOp):
     __props__ = ('slope', 'alpha', 'beta', 'k', 'size', 'uniq_id')
+
     def __init__(self, slope=1, uniq_id=None, alpha=1e-4, beta=0.75, k=2, n=5):
         self.uniq_id = uniq_id
         self.slope = slope
@@ -886,7 +888,7 @@ class U2ILRN(MKLOp):
         self.beta = beta
         self.k = k
         self.size = n
-    
+
     def __eq__(self, other):
         if hasattr(self, '__props__'):
             if type(self) != type(other):
@@ -906,8 +908,8 @@ class U2ILRN(MKLOp):
 
     def __str__(self):
         if hasattr(self, '__props__'):
-            return '%s{%s}' % (self.__class__.__name__, 
-                                ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+            return '%s{%s}' % (self.__class__.__name__,
+                               ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
         else:
             return '%s' % (self.__class__.__name__)
 
@@ -1000,7 +1002,7 @@ class U2ILRN(MKLOp):
             }
 
             #ifdef __DEBUG__
-            printf(\"U2I_LRN: from_buffer %%x to_buffer %%x\\n\", convert_resources[dnnResouceFrom], convert_resources[dnnResourceTo]);
+            printf(\"U2ILRN: from_buffer %%x to_buffer %%x\\n\", convert_resources[dnnResouceFrom], convert_resources[dnnResourceTo]);
             #endif
         """ % locals()
         return ccode

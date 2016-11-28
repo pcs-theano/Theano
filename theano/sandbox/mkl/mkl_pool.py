@@ -8,13 +8,12 @@ import six.moves.builtins as builtins
 
 import theano
 from theano.tensor.blas import ldflags
-from theano import gof, OpenMPOp, tensor, Variable, Apply
+from theano import gof, tensor, Variable, Apply
 from theano.sandbox.mkl import mkl_helper
 from theano.gradient import DisconnectedType
 
-class PoolBase(OpenMPOp):
-    def __init__(self, ignore_border=True, mode='max', openmp=None):
-        super(PoolBase, self).__init__(openmp=openmp)
+class PoolBase(gof.Op):
+    def __init__(self, ignore_border=True, mode='max'):
         
         if not ignore_border:
             raise NotImplementedError(
@@ -189,8 +188,8 @@ class Pool(PoolBase):
     """
     __props__ = ('ignore_border', 'mode', 'uniq_id')
 
-    def __init__(self, ignore_border=True, mode='max', openmp=None, uniq_id=0):
-        super(Pool, self).__init__(ignore_border, mode, openmp)
+    def __init__(self, ignore_border=True, mode='max', uniq_id=0):
+        super(Pool, self).__init__(ignore_border, mode)
         self.uniq_id =  uniq_id
 
     def __eq__(self, other):
@@ -265,7 +264,7 @@ class Pool(PoolBase):
         out_c = numpy.ceil(((c + 2 * padding[1] - ds[1])) / (st[1])) + 1
         
         if padding[0]:
-            if isinstance(r, theano.Variable):
+            if isinstance(r, theano.Variable) or isinstance(out_r, theano.Variable):
                 out_r = tensor.switch(tensor.ge(((out_r - 1) * st[0]), (r + padding[0])),
                                       out_r - 1, out_r)
                 assert(tensor.lt(((out_r - 1) * st[0]), (r + padding[0])))
@@ -275,7 +274,7 @@ class Pool(PoolBase):
                 assert(((out_r - 1) * st[0]) < (r + padding[0]))
 
         if padding[1]:
-            if isinstance(r, theano.Variable):
+            if isinstance(c, theano.Variable) or isinstance(out_c, theano.Variable):
                 out_c = tensor.switch(tensor.ge(((out_c - 1) * st[1]), (c + padding[1])),
                                       out_c - 1, out_c)
                 assert(tensor.lt(((out_c - 1) * st[1]), (c + padding[1])))
@@ -323,7 +322,7 @@ class Pool(PoolBase):
         gz, = grads
         disc = [DisconnectedType()() for i in inp[1:]]
 
-        return [poolGrad(ignore_border=self.ignore_border,
+        return [PoolGrad(ignore_border=self.ignore_border,
                          mode=self.mode,
                          uniq_id=self.uniq_id)(x, gz, ws, stride, pad)] + disc
 
@@ -552,14 +551,14 @@ class Pool(PoolBase):
         return ccode
 
     def c_code_cache_version(self):
-        return (0, 6, 8, 4, self.openmp, self.uniq_id)
+        return (1, 0, self.uniq_id)
 
 
 class PoolGrad(PoolBase):
     __props__ = ('ignore_border', 'mode', 'uniq_id')
 
-    def __init__(self, ignore_border=False, mode='max', openmp=None, uniq_id=0):
-        super(PoolGrad, self).__init__(ignore_border, mode, openmp)
+    def __init__(self, ignore_border=False, mode='max', uniq_id=0):
+        super(PoolGrad, self).__init__(ignore_border, mode)
         self.uniq_id = uniq_id
 
     def __eq__(self, other):
@@ -636,7 +635,7 @@ class PoolGrad(PoolBase):
         out_c = numpy.ceil(((c + 2 * padding[1] - ds[1])) / (st[1])) + 1
         
         if padding[0]:
-            if isinstance(r, theano.Variable):
+            if isinstance(r, theano.Variable) or isinstance(out_r, theano.Variable):
                 out_r = tensor.switch(tensor.ge(((out_r - 1) * st[0]), (r + padding[0])),
                                       out_r - 1, out_r)
                 assert(tensor.lt(((out_r - 1) * st[0]), (r + padding[0])))
@@ -646,7 +645,7 @@ class PoolGrad(PoolBase):
                 assert(((out_r - 1) * st[0]) < (r + padding[0]))
 
         if padding[1]:
-            if isinstance(r, theano.Variable):
+            if isinstance(c, theano.Variable) or isinstance(out_c, theano.Variable):
                 out_c = tensor.switch(tensor.ge(((out_c - 1) * st[1]), (c + padding[1])),
                                       out_c - 1, out_c)
                 assert(tensor.lt(((out_c - 1) * st[1]), (c + padding[1])))
@@ -908,4 +907,4 @@ class PoolGrad(PoolBase):
         return ccode
 
     def c_code_cache_version(self):
-        return (0, 6, 8, 4, self.openmp, self.uniq_id)
+        return (1, 0, self.uniq_id)
