@@ -6,8 +6,11 @@ from theano.gradient import DisconnectedType
 
 
 class MKLOp(Op):
-    def __init__(self, uniq_id=None):
+    def __init__(self, uniq_id=0):
         self.uniq_id = uniq_id
+
+    def c_headers(self):
+        return super(MKLOp, self).c_headers()
 
     def c_lib_dirs(self):
         return ldflags(libs=False, libs_dir=True)
@@ -23,7 +26,7 @@ class MKLOp(Op):
     def c_support_code(self):
         ccode = mkl_helper.header_text()
         ccode += """
-            #define _DEBUG_
+            //#define _DEBUG_
             #define DIMENSION  4
 
             #define CHECK_ERR(f, err) \\
@@ -52,13 +55,13 @@ class MKLOp(Op):
         return ccode
 
     def c_code_cache_version(self):
-        return (1, 0, self.mklver, self.uniq_id)
+        return (1, 0, self.uniq_id)
 
 
 class U2IPool(MKLOp):
     __props__ = ('ignore_border', 'mode', 'uniq_id')
 
-    def __init__(self, ignore_border=False, mode='max', uniq_id=None):
+    def __init__(self, ignore_border=False, mode='max', uniq_id=0):
         super(U2IPool, self).__init__(uniq_id)
         self.ignore_border = ignore_border
         self.mode = mode
@@ -133,38 +136,40 @@ class U2IPool(MKLOp):
             raise NotImplementedError('%s is not implemented' % self.mode)
 
         ccode = """
-            bottomSize[0] = PyArray_DIMS(%(x)s)[3];  //w
-            bottomSize[1] = PyArray_DIMS(%(x)s)[2];  //h
-            bottomSize[2] = PyArray_DIMS(%(x)s)[1];  //c
-            bottomSize[3] = PyArray_DIMS(%(x)s)[0];  //n
-            bottomStride[0] = 1;
-            bottomStride[1] = bottomSize[0];
-            bottomStride[2] = bottomSize[0] * bottomSize[1];
-            bottomStride[3] = bottomSize[0] * bottomSize[1] * bottomSize[2];
+            if (1 == first_run) {
+                bottomSize[0] = PyArray_DIMS(%(x)s)[3];  //w
+                bottomSize[1] = PyArray_DIMS(%(x)s)[2];  //h
+                bottomSize[2] = PyArray_DIMS(%(x)s)[1];  //c
+                bottomSize[3] = PyArray_DIMS(%(x)s)[0];  //n
+                bottomStride[0] = 1;
+                bottomStride[1] = bottomSize[0];
+                bottomStride[2] = bottomSize[0] * bottomSize[1];
+                bottomStride[3] = bottomSize[0] * bottomSize[1] * bottomSize[2];
 
-            size_t kernel_h = *((npy_intp*)PyArray_GETPTR1(%(ws)s, 0));
-            size_t kernel_w = *((npy_intp*)PyArray_GETPTR1(%(ws)s, 1));
-            size_t stride_h = *((npy_intp*)PyArray_GETPTR1(%(stride)s, 0));
-            size_t stride_w = *((npy_intp*)PyArray_GETPTR1(%(stride)s, 1));
-            size_t pad_h = *((npy_intp*)PyArray_GETPTR1(%(pad)s, 0));
-            size_t pad_w = *((npy_intp*)PyArray_GETPTR1(%(pad)s, 1));
+                size_t kernel_h = *((npy_intp*)PyArray_GETPTR1(%(ws)s, 0));
+                size_t kernel_w = *((npy_intp*)PyArray_GETPTR1(%(ws)s, 1));
+                size_t stride_h = *((npy_intp*)PyArray_GETPTR1(%(stride)s, 0));
+                size_t stride_w = *((npy_intp*)PyArray_GETPTR1(%(stride)s, 1));
+                size_t pad_h = *((npy_intp*)PyArray_GETPTR1(%(pad)s, 0));
+                size_t pad_w = *((npy_intp*)PyArray_GETPTR1(%(pad)s, 1));
 
-            size_t kernelSize[2] = {kernel_w, kernel_h};
-            size_t kernelStride[2] = {stride_w, stride_h};
-            int inputOffset[2] = {pad_w, pad_h};
+                size_t kernelSize[2] = {kernel_w, kernel_h};
+                size_t kernelStride[2] = {stride_w, stride_h};
+                int inputOffset[2] = {pad_w, pad_h};
 
-            //create user layout
-            CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_usr, DIMENSION, bottomSize, bottomStride), err );
+                //create user layout
+                CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_usr, DIMENSION, bottomSize, bottomStride), err );
 
-            CHECK_ERR( dnnPoolingCreateForward_%(precision)s(&primitive, NULL, %(algo)s,
-                       layout_usr, kernelSize, kernelStride, inputOffset, dnnBorderZeros), err );
+                CHECK_ERR( dnnPoolingCreateForward_%(precision)s(&primitive, NULL, %(algo)s,
+                           layout_usr, kernelSize, kernelStride, inputOffset, dnnBorderZeros), err );
 
-            //create internal layout
-            CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_int, primitive, dnnResourceSrc), err );
+                //create internal layout
+                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_int, primitive, dnnResourceSrc), err );
 
-            if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_int)) {
-                if(NULL == convert_to_int) {
-                    CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_to_int, layout_usr, layout_int), err );
+                if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_int)) {
+                    if(NULL == convert_to_int) {
+                        CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_to_int, layout_usr, layout_int), err );
+                    }
                 }
             }
 
@@ -189,7 +194,6 @@ class U2IPool(MKLOp):
 
                 CHECK_ERR( dnnExecute_%(precision)s(convert_to_int, convert_resources), err );
             } else {
-                //TODO, need to double check if we can skip convertion if layout is equal
                 internal_ptr = (PyArray_DATA(%(x)s));
             }
 
@@ -198,18 +202,22 @@ class U2IPool(MKLOp):
             if(internal_ptr != ((void**)PyArray_DATA(%(z)s))[1])
                 ((void**)PyArray_DATA(%(z)s))[1] = internal_ptr;
 
-        #ifdef __DEBUG__
-            printf(\"U2IPool: from_buffer %%x to_buffer %%x\\n\",convert_resources[dnnResourceFrom],convert_resources[dnnResourceTo]);
-        #endif
+            first_run = 0;
 
+            #ifdef __DEBUG__
+                printf(\"U2IPool: from_buffer %%x to_buffer %%x\\n\",convert_resources[dnnResourceFrom],convert_resources[dnnResourceTo]);
+            #endif
         """ % locals()
         return ccode
+
+    def connection_pattern(self, node):
+        return [[1], [0], [0], [0]]
 
 
 class I2U(MKLOp):
     __props__ = ('uniq_id',)
 
-    def __init__(self, uniq_id=None):
+    def __init__(self, uniq_id=0):
         super(I2U, self).__init__(uniq_id)
 
     def __eq__(self, other):
@@ -319,8 +327,8 @@ class I2U(MKLOp):
 class U2IRelu(MKLOp):
     __props__ = ('slope', 'uniq_id')
 
-    def __init__(self, slope=1, uniq_id=None):
-        self.uniq_id = uniq_id
+    def __init__(self, slope=1, uniq_id=0):
+        super(U2IRelu, self).__init__(uniq_id)
         self.slope = slope
 
     def __eq__(self, other):
@@ -339,6 +347,13 @@ class U2IRelu(MKLOp):
 
     def __hash__(self):
         return hash(self.slope)
+
+    def __str__(self):
+        if hasattr(self, '__props__'):
+            return '%s{%s}' % (self.__class__.__name__,
+                               ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+        else:
+            return '%s' % (self.__class__.__name__)
 
     def make_node(self, x):
         x = T.as_tensor_variable(x)
@@ -370,26 +385,28 @@ class U2IRelu(MKLOp):
         fail = sub['fail']
 
         ccode = """
-            bottomSize[0] = PyArray_DIMS(%(x)s)[3];  //w
-            bottomSize[1] = PyArray_DIMS(%(x)s)[2];  //h
-            bottomSize[2] = PyArray_DIMS(%(x)s)[1];  //c
-            bottomSize[3] = PyArray_DIMS(%(x)s)[0];  //n
-            bottomStride[0] = 1;
-            bottomStride[1] = bottomSize[0];
-            bottomStride[2] = bottomSize[0] * bottomSize[1];
-            bottomStride[3] = bottomSize[0] * bottomSize[1] * bottomSize[2];
+            if (1 == first_run) {
+                bottomSize[0] = PyArray_DIMS(%(x)s)[3];  //w
+                bottomSize[1] = PyArray_DIMS(%(x)s)[2];  //h
+                bottomSize[2] = PyArray_DIMS(%(x)s)[1];  //c
+                bottomSize[3] = PyArray_DIMS(%(x)s)[0];  //n
+                bottomStride[0] = 1;
+                bottomStride[1] = bottomSize[0];
+                bottomStride[2] = bottomSize[0] * bottomSize[1];
+                bottomStride[3] = bottomSize[0] * bottomSize[1] * bottomSize[2];
 
-            //create user layout
-            CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_usr, DIMENSION, bottomSize, bottomStride), err );
+                //create user layout
+                CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_usr, DIMENSION, bottomSize, bottomStride), err );
 
-            CHECK_ERR( dnnReLUCreateForward_%(precision)s(&primitive, NULL, layout_usr, %(slope)s), err );
+                CHECK_ERR( dnnReLUCreateForward_%(precision)s(&primitive, NULL, layout_usr, %(slope)s), err );
 
-            //create internal layout
-            CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_int, primitive, dnnResourceSrc), err );
+                //create internal layout
+                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_int, primitive, dnnResourceSrc), err );
 
-            if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_int)) {
-                if(NULL == convert_to_int) {
-                    CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_to_int, layout_usr, layout_int), err );
+                if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_int)) {
+                    if(NULL == convert_to_int) {
+                        CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_to_int, layout_usr, layout_int), err );
+                    }
                 }
             }
 
@@ -414,7 +431,6 @@ class U2IRelu(MKLOp):
 
                 CHECK_ERR( dnnExecute_%(precision)s(convert_to_int, convert_resources), err );
             } else {
-                //TODO, need to double check if we can skip convertion if layout is equal
                 internal_ptr = (PyArray_DATA(%(x)s));
             }
 
@@ -423,10 +439,11 @@ class U2IRelu(MKLOp):
             if(internal_ptr != ((void**)PyArray_DATA(%(z)s))[1])
                 ((void**)PyArray_DATA(%(z)s))[1] = internal_ptr;
 
-        #ifdef __DEBUG__
-            printf(\"U2IRelu: from_buffer %%x to_buffer %%x\\n\",convert_resources[dnnResourceFrom],convert_resources[dnnResourceTo]);
-        #endif
+            first_run = 0;
 
+            #ifdef __DEBUG__
+                printf(\"U2IRelu: from_buffer %%x to_buffer %%x\\n\",convert_resources[dnnResourceFrom],convert_resources[dnnResourceTo]);
+            #endif
         """ % locals()
         return ccode
 
@@ -434,8 +451,8 @@ class U2IRelu(MKLOp):
 class U2IGrad(MKLOp):
     __props__ = ('uniq_id',)
 
-    def __init__(self, uniq_id=None):
-        self.uniq_id = uniq_id
+    def __init__(self, uniq_id=0):
+        super(U2IGrad, self).__init__(uniq_id)
 
     def __eq__(self, other):
         if hasattr(self, '__props__'):
@@ -461,40 +478,9 @@ class U2IGrad(MKLOp):
         else:
             return '%s' % (self.__class__.__name__)
 
-    def c_code_cache_version(self):
-        return (1, 0, self.uniq_id)
-
-    def c_headers(self):
-        return super(U2IGrad, self).c_headers()
-
-    def c_lib_dirs(self):
-        return ldflags(libs=False, libs_dir=True)
-
-    def c_libraries(self):
-        return ldflags()
-
-    def c_compile_args(self):
-        compile_args = ldflags(libs=False, flags=True)
-        compile_args += super(U2IGrad, self).c_compile_args()
-        return compile_args
-
     def make_node(self, x, gz):
         out = x.type()
         return Apply(self, [x, gz], [out])
-
-    def c_support_code(self):
-        ccode = mkl_helper.header_text()
-        ccode += """
-         //#define _DEBUG_
-         static void* internal_ptr = NULL;
-         static void* usr_ptr = NULL;
-         static dnnLayout_t layout_int = NULL;
-         static dnnLayout_t layout_usr = NULL;
-         static dnnPrimitive_t convert_from_int = NULL;
-         static dnnPrimitive_t FilterFwd = NULL;
-         void *convert_resources[dnnResourceNumber];
-         """
-        return ccode
 
     def c_cleanup_code_struct(self, node, name):
         d = {}
@@ -506,7 +492,7 @@ class U2IGrad(MKLOp):
             raise Exception("Type %s not implemented" %
                             node.inputs[0].type.dtype)
         return """
-                //free buffer
+              //free buffer
               int status = 0;
 
               if(NULL != usr_ptr)
@@ -617,9 +603,9 @@ class U2IGrad(MKLOp):
 
         convert_resources[dnnResourceFrom] = internal_ptr;
         convert_resources[dnnResourceTo] = (void*)PyArray_DATA(%(z)s);
-    #ifdef _DEBUG_
-        printf(\"%%x, %%x , %%x to %%x\\n\",convert_from_int,layout_int,internal_ptr,convert_resources[dnnResourceTo]);
-    #endif
+        #ifdef _DEBUG_
+            printf(\"%%x, %%x , %%x to %%x\\n\",convert_from_int,layout_int,internal_ptr,convert_resources[dnnResourceTo]);
+        #endif
         if(dnnLayoutGetMemorySize_%(precision)s(layout_int) != PyArray_DIMS(%(z)s)[0]*PyArray_STRIDES(%(z)s)[0])
         {
                //printf(\"U2IGrad_Error: int: %%d != usr: %%d\\n\",dnnLayoutGetMemorySize_%(precision)s(layout_int),PyArray_DIMS(%(z)s)[0]*PyArray_STRIDES(%(z)s)[0]);
@@ -639,8 +625,8 @@ class U2IGrad(MKLOp):
 class I2UGrad(MKLOp):
     __props__ = ('uniq_id',)
 
-    def __init__(self, uniq_id=None):
-        self.uniq_id = uniq_id
+    def __init__(self, uniq_id=0):
+        super(I2UGrad, self).__init__(uniq_id)
 
     def __eq__(self, other):
         if hasattr(self, '__props__'):
@@ -666,38 +652,9 @@ class I2UGrad(MKLOp):
         else:
             return '%s' % (self.__class__.__name__)
 
-    def c_code_cache_version(self):
-        return (1, 0, self.uniq_id)
-
-    def c_headers(self):
-        return super(I2UGrad, self).c_headers()
-
-    def c_lib_dirs(self):
-        return ldflags(libs=False, libs_dir=True)
-
-    def c_libraries(self):
-        return ldflags()
-
-    def c_compile_args(self):
-        compile_args = ldflags(libs=False, flags=True)
-        compile_args += super(I2UGrad, self).c_compile_args()
-        return compile_args
-
     def make_node(self, x, gz):
         out = x.type()
         return Apply(self, [x, gz], [out])
-
-    def c_support_code(self):
-        ccode = mkl_helper.header_text()
-        ccode += """
-         ///#define _DEBUG_
-         static void* internal_ptr = NULL;
-         static dnnLayout_t layout_int = NULL;
-         static dnnLayout_t layout_usr = NULL;
-         static dnnPrimitive_t convert_to_int = NULL;
-         void *convert_resources[dnnResourceNumber];
-         """
-        return ccode
 
     def c_cleanup_code_struct(self, node, name):
         d = {}
@@ -881,8 +838,8 @@ class I2UGrad(MKLOp):
 class U2ILRN(MKLOp):
     __props__ = ('slope', 'alpha', 'beta', 'k', 'size', 'uniq_id')
 
-    def __init__(self, slope=1, uniq_id=None, alpha=1e-4, beta=0.75, k=2, n=5):
-        self.uniq_id = uniq_id
+    def __init__(self, slope=1, alpha=1e-4, beta=0.75, k=2, n=5, uniq_id=0):
+        super(U2ILRN, self).__init__(uniq_id)
         self.slope = slope
         self.alpha = alpha
         self.beta = beta
@@ -943,26 +900,28 @@ class U2ILRN(MKLOp):
         fail = sub['fail']
 
         ccode = """
-            bottomSize[0] = PyArray_DIMS(%(x)s)[3]; //w
-            bottomSize[1] = PyArray_DIMS(%(x)s)[2]; //h
-            bottomSize[2] = PyArray_DIMS(%(x)s)[1]; //c
-            bottomSize[3] = PyArray_DIMS(%(x)s)[0]; //n
+            if (1 == first_run) {
+                bottomSize[0] = PyArray_DIMS(%(x)s)[3]; //w
+                bottomSize[1] = PyArray_DIMS(%(x)s)[2]; //h
+                bottomSize[2] = PyArray_DIMS(%(x)s)[1]; //c
+                bottomSize[3] = PyArray_DIMS(%(x)s)[0]; //n
 
-            bottomStride[0] = 1;
-            bottomStride[1] = bottomStride[0] * bottomSize[0];
-            bottomStride[2] = bottomStride[1] * bottomSize[1];
-            bottomStride[3] = bottomStride[2] * bottomSize[2];
+                bottomStride[0] = 1;
+                bottomStride[1] = bottomStride[0] * bottomSize[0];
+                bottomStride[2] = bottomStride[1] * bottomSize[1];
+                bottomStride[3] = bottomStride[2] * bottomSize[2];
 
-            //create user layout
-            CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_usr, DIMENSION, bottomSize, bottomStride), err );
-            CHECK_ERR( dnnLRNCreateForward_%(precision)s(&primitive, NULL, layout_usr, %(size)s, %(alpha)s, %(beta)s, %(k)s), err );
-            CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_int, primitive, dnnResourceSrc), err );
+                //create user layout
+                CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_usr, DIMENSION, bottomSize, bottomStride), err );
+                CHECK_ERR( dnnLRNCreateForward_%(precision)s(&primitive, NULL, layout_usr, %(size)s, %(alpha)s, %(beta)s, %(k)s), err );
+                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_int, primitive, dnnResourceSrc), err );
 
-            if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_int))
-            {
-                if (NULL == convert_to_int)
+                if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_int))
                 {
-                    CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_to_int, layout_usr, layout_int), err );
+                    if (NULL == convert_to_int)
+                    {
+                        CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_to_int, layout_usr, layout_int), err );
+                    }
                 }
             }
 
@@ -1001,8 +960,10 @@ class U2ILRN(MKLOp):
                 ((void**)PyArray_DATA(%(z)s))[1] = internal_ptr;
             }
 
+            first_run = 0;
+
             #ifdef __DEBUG__
-            printf(\"U2ILRN: from_buffer %%x to_buffer %%x\\n\", convert_resources[dnnResouceFrom], convert_resources[dnnResourceTo]);
+                printf(\"U2ILRN: from_buffer %%x to_buffer %%x\\n\", convert_resources[dnnResouceFrom], convert_resources[dnnResourceTo]);
             #endif
         """ % locals()
         return ccode

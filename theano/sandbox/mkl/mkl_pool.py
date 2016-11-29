@@ -1,20 +1,17 @@
 from __future__ import absolute_import, print_function, division
-import warnings
 
 import numpy
-from six import integer_types
-from six.moves import xrange
-import six.moves.builtins as builtins
 
 import theano
 from theano.tensor.blas import ldflags
-from theano import gof, tensor, Variable, Apply
+from theano import gof, tensor, Apply
 from theano.sandbox.mkl import mkl_helper
 from theano.gradient import DisconnectedType
 
+
 class PoolBase(gof.Op):
     def __init__(self, ignore_border=True, mode='max'):
-        
+
         if not ignore_border:
             raise NotImplementedError(
                 'ignore_border only allows to be True in MKL currently')
@@ -54,7 +51,7 @@ class PoolBase(gof.Op):
     def c_support_code_apply(self, node, name):
         dtype = str(node.__dict__['inputs'][0].dtype)
         assert dtype in ('float32', 'float64')
-        
+
         sub = {}
         if dtype == 'float32':
             sub['dtype'] = 'float'
@@ -76,7 +73,7 @@ class PoolBase(gof.Op):
                                __FILE__, __LINE__, err); \\
                         exit(1); \\
                     } \\
-                } while(0) 
+                } while(0)
             """
 
         ccode += """
@@ -132,10 +129,12 @@ class PoolBase(gof.Op):
         """ % sub
         return ccode
 
-    #def c_support_code_struct(self, node, name):
-    #    ccode = """
-    #    """
-    #    return ccode
+    '''
+    def c_support_code_struct(self, node, name):
+        ccode = """
+        """
+        return ccode
+    '''
 
     def c_cleanup_code_struct(self, node, name):
         if node.inputs[0].type.dtype == "float32":
@@ -155,6 +154,9 @@ class PoolBase(gof.Op):
             //dnnLayoutDelete_%(precision)s(int_layout_workspace);
         """ % locals()
         return ccode
+
+    def connection_pattern(self, node):
+        return [[1], [0], [0], [0]]
 
 
 class Pool(PoolBase):
@@ -190,7 +192,7 @@ class Pool(PoolBase):
 
     def __init__(self, ignore_border=True, mode='max', uniq_id=0):
         super(Pool, self).__init__(ignore_border, mode)
-        self.uniq_id =  uniq_id
+        self.uniq_id = uniq_id
 
     def __eq__(self, other):
         if hasattr(self, '__props__'):
@@ -212,7 +214,7 @@ class Pool(PoolBase):
     def __str__(self):
         if hasattr(self, '__props__'):
             return '%s{%s}' % (self.__class__.__name__,
-                            ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+                               ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
         else:
             return '%s' % (self.__class__.__name__)
 
@@ -258,11 +260,11 @@ class Pool(PoolBase):
         r, c = imgshape[-2:]
         r = tensor.extract_constant(r)
         c = tensor.extract_constant(c)
-        
+
         # TODO CY, looks like no need to make it float then ceil
         out_r = numpy.ceil(((r + 2 * padding[0] - ds[0])) / (st[0])) + 1
         out_c = numpy.ceil(((c + 2 * padding[1] - ds[1])) / (st[1])) + 1
-        
+
         if padding[0]:
             if isinstance(r, theano.Variable) or isinstance(out_r, theano.Variable):
                 out_r = tensor.switch(tensor.ge(((out_r - 1) * st[0]), (r + padding[0])),
@@ -310,6 +312,7 @@ class Pool(PoolBase):
 
         broad = x.broadcastable[:2] + (False, False)
         out = tensor.TensorType(x.dtype, broad)
+
         return Apply(self, [x, ws, stride, pad], [out()])
 
     def infer_shape(self, node, in_shapes):
@@ -329,7 +332,7 @@ class Pool(PoolBase):
     def c_code(self, node, name, inp, out, sub):
         x, ws, stride, pad = inp
         z, = out
-        
+
         if 'max' == self.mode:
             algo = "dnnAlgorithmPoolingMax"
         elif 'min' == self.mode:
@@ -337,13 +340,15 @@ class Pool(PoolBase):
         elif self.mode.startswith('average'):
             algo = "dnnAlgorithmPoolingAvg"
         else:
-            raise VauleError("mode must be one of 'max', 'min', 'average'")
+            raise ValueError("mode must be one of 'max', 'min', 'average'")
 
-        #ignore_border = int(self.ignore_border)
-        #if self.ignore_border:
-        #    borderType = 'dnnBorderZeros'
-        #else:
-        #    borderType = 'dnnBorderExtrapolation'
+        '''
+        ignore_border = int(self.ignore_border)
+        if self.ignore_border:
+            borderType = 'dnnBorderZeros'
+        else:
+            borderType = 'dnnBorderExtrapolation'
+        '''
         # FIXME, current mkl only support this type
         borderType = 'dnnBorderZeros'
 
@@ -364,7 +369,7 @@ class Pool(PoolBase):
         std::cout<<"pool start"<<std::endl;
         #endif
             ((void **)PyArray_DATA(%(x)s))[2] = (void*)workspace_ptr_ptr;
-            printf(\"pool workspace_ptr_ptr:%%x\\n\",workspace_ptr_ptr);
+            //printf(\"pool workspace_ptr_ptr:%%x\\n\",workspace_ptr_ptr);
 
         if (1 == first_run) {
             size_t kernel_h = *((npy_intp*)PyArray_GETPTR1(%(ws)s, 0));
@@ -373,19 +378,19 @@ class Pool(PoolBase):
             size_t stride_w = *((npy_intp*)PyArray_GETPTR1(%(stride)s, 1));
             size_t pad_h = *((npy_intp*)PyArray_GETPTR1(%(pad)s, 0));
             size_t pad_w = *((npy_intp*)PyArray_GETPTR1(%(pad)s, 1));
-    
+
             kernelSize[0] = kernel_w;
             kernelSize[1] = kernel_h;
             kernelStride[0] = stride_w;
             kernelStride[1] = stride_h;
             inputOffset[0] = -pad_w;
             inputOffset[1] = -pad_h;
-    
+
             int out_h, out_w; // shape of the output
             int in_h, in_w; // shape of the padded_input
             in_h = PyArray_DIMS(%(x)s)[2];
             in_w = PyArray_DIMS(%(x)s)[3];
-    
+
             out_h = ceil((float)(in_h + 2 * pad_h - kernel_h)/stride_h) + 1;
             out_w = ceil((float)(in_w + 2 * pad_w - kernel_w)/stride_w) + 1;
             if (pad_h || pad_w) {
@@ -398,7 +403,7 @@ class Pool(PoolBase):
                 assert((out_h - 1) * stride_h < in_h + pad_h);
                 assert((out_w - 1) * stride_w < in_w + pad_w);
             }
-    
+
             inputSize[0] = PyArray_DIMS(%(x)s)[3];  //w
             inputSize[1] = PyArray_DIMS(%(x)s)[2];  //h
             inputSize[2] = PyArray_DIMS(%(x)s)[1];  //c
@@ -407,7 +412,7 @@ class Pool(PoolBase):
             inputStrides[1] = inputSize[0];
             inputStrides[2] = inputSize[0] * inputSize[1];
             inputStrides[3] = inputSize[0] * inputSize[1] * inputSize[2];
-    
+
             outputSize[0] = out_w;
             outputSize[1] = out_h;
             outputSize[2] = inputSize[2];
@@ -424,8 +429,7 @@ class Pool(PoolBase):
             std::cout << "pooling stride: " << kernelStride[0] << "x" << kernelStride[1] << std::endl;
             std::cout << "padding: " << inputOffset[0] << "x" << inputOffset[1] << std::endl;
         #endif
-        
-    
+
         // get internal layout for gz from previous Op
         int_layout_input_from_previous = ((dnnLayout_t*)PyArray_DATA(%(x)s))[0];
         // get internal buffer for gz from previous op
@@ -435,13 +439,13 @@ class Pool(PoolBase):
             std::cout <<"pool forward, int_layout_input_from_previous: @"<<int_layout_input_from_previous<<std::endl;
             std::cout <<"pool forward, input_buffer_ptr_from_previous: @"<<input_buffer_ptr_from_previous<<std::endl;
         #endif
-    
+
         if (NULL == pPoolingFwd) {
             CHECK_ERR( dnnPoolingCreateForward_%(precision)s(&pPoolingFwd, NULL,
                        %(algo)s, int_layout_input_from_previous, kernelSize,
                        kernelStride, inputOffset, %(borderType)s), err );
         }
-    
+
         if (NULL == int_layout_input) {
             CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(
                        &int_layout_input, pPoolingFwd, dnnResourceSrc), err );
@@ -497,7 +501,7 @@ class Pool(PoolBase):
         if (!dnnLayoutCompare_%(precision)s(int_layout_input_from_previous, int_layout_input)) {
             #if __DEBUG__
                 std::cout<<"############ pool forward, input layout is not equal" <<std::endl;
-            #endif                                                           
+            #endif
             if (NULL == convert_int2int_input) {
                 CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_int2int_input, int_layout_input_from_previous, int_layout_input), err );
             }
@@ -508,8 +512,8 @@ class Pool(PoolBase):
             }
             CHECK_ERR( dnnConversionExecute_%(precision)s(convert_int2int_input, input_buffer_ptr_from_previous, input_buffer_ptr), err );
             int_layout_input_ptr = &int_layout_input;
-        } else {                                                             
-            int_layout_input_ptr = &int_layout_input_from_previous;          
+        } else {
+            int_layout_input_ptr = &int_layout_input_from_previous;
             input_buffer_ptr = input_buffer_ptr_from_previous;
         }
 
@@ -566,8 +570,10 @@ class PoolGrad(PoolBase):
             if type(self) != type(other):
                 return False
             else:
-                self_props = [getattr(self, p) for p in self.__props__ if p != 'uniq_id']
-                other_props = [getattr(other, p) for p in other.__props__ if p != 'uniq_id']
+                self_props = [getattr(self, p) for p in self.__props__
+                              if p != 'uniq_id']
+                other_props = [getattr(other, p) for p in other.__props__
+                               if p != 'uniq_id']
                 if self_props == other_props:
                     return True
                 else:
@@ -581,7 +587,7 @@ class PoolGrad(PoolBase):
     def __str__(self):
         if hasattr(self, '__props__'):
             return '%s{%s}' % (self.__class__.__name__,
-                            ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+                               ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
         else:
             return '%s' % (self.__class__.__name__)
 
@@ -629,11 +635,11 @@ class PoolGrad(PoolBase):
         r, c = imgshape[-2:]
         r = tensor.extract_constant(r)
         c = tensor.extract_constant(c)
-        
+
         # TODO CY, looks like no need to make it float then ceil
         out_r = numpy.ceil(((r + 2 * padding[0] - ds[0])) / (st[0])) + 1
         out_c = numpy.ceil(((c + 2 * padding[1] - ds[1])) / (st[1])) + 1
-        
+
         if padding[0]:
             if isinstance(r, theano.Variable) or isinstance(out_r, theano.Variable):
                 out_r = tensor.switch(tensor.ge(((out_r - 1) * st[0]), (r + padding[0])),
@@ -687,7 +693,7 @@ class PoolGrad(PoolBase):
         broad = x.broadcastable[:2] + (False, False)
         out = tensor.TensorType(x.dtype, broad)
 
-        return Apply(self, [x, gz, ws, stride, pad], [x.type()])
+        return Apply(self, [x, gz, ws, stride, pad], [out()])
 
     def c_code(self, node, name, inp, out, sub):
         x, gz, ws, stride, pad = inp
@@ -700,13 +706,15 @@ class PoolGrad(PoolBase):
         elif self.mode.startswith('average'):
             algo = "dnnAlgorithmPoolingAvg"
         else:
-            raise VauleError("mode must be one of 'max', 'min', 'average'")
+            raise ValueError("mode must be one of 'max', 'min', 'average'")
 
-        #ignore_border = int(self.ignore_border)
-        #if self.ignore_border:
-        #    borderType = 'dnnBorderZeros'
-        #else:
-        #    borderType = 'dnnBorderExtrapolation'
+        '''
+        ignore_border = int(self.ignore_border)
+        if self.ignore_border:
+            borderType = 'dnnBorderZeros'
+        else:
+            borderType = 'dnnBorderExtrapolation'
+        '''
         borderType = 'dnnBorderZeros'
 
         if node.inputs[0].type.dtype == "float32":  # FIXME, remove if it's defined in other place
@@ -724,7 +732,7 @@ class PoolGrad(PoolBase):
         std::cout<<"poolgrad start"<<std::endl;
         #endif
             workspace_ptr = ((void**)PyArray_DATA(%(x)s))[2];
-            printf("workspace_ptr=0x%%x\\n", workspace_ptr);
+            //printf("workspace_ptr=0x%%x\\n", workspace_ptr);
 
         if (1 == first_run) {
             size_t kernel_h = *((npy_intp*)PyArray_GETPTR1(%(ws)s, 0));
@@ -733,20 +741,20 @@ class PoolGrad(PoolBase):
             size_t stride_w = *((npy_intp*)PyArray_GETPTR1(%(stride)s, 1));
             size_t pad_h = *((npy_intp*)PyArray_GETPTR1(%(pad)s, 0));
             size_t pad_w = *((npy_intp*)PyArray_GETPTR1(%(pad)s, 1));
-    
+
             kernelSize[0] = kernel_w;
             kernelSize[1] = kernel_h;
             kernelStride[0] = stride_w;
             kernelStride[1] = stride_h;
             inputOffset[0] = -pad_w;
             inputOffset[1] = -pad_h;
-    
+
             ///////////// no need to calc output h&w since we can get the shape from gz. remove it.
             //int out_h, out_w; // shape of the output
             //int in_h, in_w; // shape of the padded_input
             //in_h = PyArray_DIMS(%(x)s)[2];
             //in_w = PyArray_DIMS(%(x)s)[3];
-    
+
             //out_h = ceil((float)(in_h + 2 * pad_h - kernel_h)/stride_h) + 1;
             //out_w = ceil((float)(in_w + 2 * pad_w - kernel_w)/stride_w) + 1;
             //if (pad_h || pad_w) {
@@ -760,7 +768,7 @@ class PoolGrad(PoolBase):
             //    assert((out_w - 1) * stride_w < in_w + pad_w);
             //}
             ///////////////////////////////////////////////////////////////////////////////
-    
+
             //use 'x' instead of '%(x)s' will cause segment fault!!!
             inputSize[0] = PyArray_DIMS(%(x)s)[3];  //w
             inputSize[1] = PyArray_DIMS(%(x)s)[2];  //h
@@ -770,7 +778,7 @@ class PoolGrad(PoolBase):
             inputStrides[1] = inputSize[0];
             inputStrides[2] = inputSize[0] * inputSize[1];
             inputStrides[3] = inputSize[0] * inputSize[1] * inputSize[2];
-    
+
             outputSize[0] = PyArray_DIMS(%(gz)s)[3];
             outputSize[1] = PyArray_DIMS(%(gz)s)[2];
             outputSize[2] = PyArray_DIMS(%(gz)s)[1];
@@ -779,7 +787,7 @@ class PoolGrad(PoolBase):
             outputStrides[1] = outputSize[0];
             outputStrides[2] = outputSize[0] * outputSize[1];
             outputStrides[3] = outputSize[0] * outputSize[1] * outputSize[2];
-    
+
             #if __DEBUG__
             std::cout << "inputgradSize: " << inputSize[3] << "x" << inputSize[2] << "x" << inputSize[1] << "x" << inputSize[0] << std::endl;
             std::cout << "outputgradSize: " << outputSize[3] << "x" << outputSize[2] << "x" << outputSize[1] << "x" << outputSize[0] << std::endl;
@@ -788,10 +796,10 @@ class PoolGrad(PoolBase):
             std::cout << "padding: " << inputOffset[0] << "x" << inputOffset[1] << std::endl;
             #endif
         }
-    
+
         // get internal layout for gz from previous Op
         int_layout_input_from_previous = ((dnnLayout_t*)PyArray_DATA(%(x)s))[0];
-    
+
         if (NULL == pPoolingBwd) {
             CHECK_ERR( dnnPoolingCreateBackward_%(precision)s(&pPoolingBwd, NULL,
                        %(algo)s, int_layout_input_from_previous, kernelSize,
@@ -836,21 +844,21 @@ class PoolGrad(PoolBase):
                 std::cout<<"allocat fail\\n";
             }
         }
-   
+
         // get internal buffer for gz from previous op
         gz_int_layout_from_other = ((dnnLayout_t*)PyArray_DATA(%(gz)s))[0];
         gz_buffer_ptr = ((void **)PyArray_DATA(%(gz)s))[1];
-      
+
         int_layout_workspace_p = ((dnnLayout_t**)workspace_ptr)[0];
         int_layout_workspace = *int_layout_workspace_p;
         pool_res[dnnResourceWorkspace] = ((void**)workspace_ptr)[1];
 
         if(first_run ==1)
-        { 
+        {
             if (!dnnLayoutCompare_%(precision)s(gz_int_layout_from_other, gz_int_layout)) {
             #if __DEBUG__
                 std::cout<<"############ pool backward, gz layout is not equal" <<std::endl;
-            #endif                                                           
+            #endif
                 if (NULL == cvt_gz_to_int) {
                     CHECK_ERR( dnnConversionCreate_%(precision)s(&cvt_gz_to_int, gz_int_layout_from_other, gz_int_layout), err );
                  }
@@ -882,26 +890,26 @@ class PoolGrad(PoolBase):
         if (!dnnLayoutCompare_%(precision)s(int_layout_input, int_layout_input_from_previous)) {
             #if __DEBUG__
                 std::cout<<"############ pool backward, input layout is not equal" <<std::endl;
-            #endif                                                           
+            #endif
             if (NULL == convert_int2int_input) {
                 CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_int2int_input, int_layout_input, int_layout_input_from_previous), err );
             }
-        } 
+        }
         if (convert_int2int_input) {
             if (NULL == input_buffer_ptr_to_previous) {
                 CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&input_buffer_ptr_to_previous, int_layout_input_from_previous ), err );
             }
             CHECK_ERR( dnnConversionExecute_%(precision)s(convert_int2int_input, input_buffer_ptr, input_buffer_ptr_to_previous), err );
-         } else {                                                          
+         } else {
             input_buffer_ptr_to_previous = input_buffer_ptr;
             //printf(\"D2: %%x\\n\",((dnnLayout_t*)PyArray_DATA(%(gx)s))[0]);
-        } 
+        }
 
         ((dnnLayout_t*)PyArray_DATA(%(gx)s))[0] = int_layout_input_from_previous;
         ((void**)PyArray_DATA(%(gx)s))[1] = input_buffer_ptr_to_previous;
 
         first_run = 0;
-        
+
         """ % sub
 
         return ccode
