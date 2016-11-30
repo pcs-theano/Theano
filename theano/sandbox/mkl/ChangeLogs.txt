@@ -1,6 +1,12 @@
 Data: 2016/11/30
 Auther: Patric
 Changes:
+1. Fix update issue
+
+----------------------------------
+Data: 2016/11/30
+Auther: Patric
+Changes:
 ----------------------------------
 1. Add Conv OP/OPT mkl_conv.py/opt.py
 2. Add U2IConv basic_ops.py

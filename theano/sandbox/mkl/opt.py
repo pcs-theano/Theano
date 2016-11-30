@@ -167,6 +167,9 @@ def local_pool_mkl(node):
     if node.inputs[0].type.ndim != 4:
         return
 
+    if node.op.mode not in ('max', 'average_inc_pad', 'average_exc_pad'):
+        return
+
     if not node.op.ignore_border:
         return
 
@@ -202,6 +205,9 @@ def local_poolGrad_mkl(node):
         return
 
     if node.inputs[0].type.ndim != 4:
+        return
+
+    if node.op.mode not in ('max', 'average_inc_pad', 'average_exc_pad'):
         return
 
     # currently, MKL only support this mode
