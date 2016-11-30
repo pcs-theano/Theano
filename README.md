@@ -26,19 +26,19 @@ Please refer to the document [Install_Guide.pdf](https://github.com/intel/theano
 
 * theanorc configuration:
 ---
-[global]
-device = cpu
-floatX = float32
-cxx = icpc
-mode = FAST_RUN
-openmp = True
-openmp_elemwise_minsize = 10
-allow_gc = False
-
-[gcc]
-cxxflags = -qopenmp -march=native -O3 -qopt-report=3 -fno-alias -qopt-prefetch=2 -fp-trap=none
-[blas]
-ldflags=-lmkl_rt
+[global]<br />
+device = cpu<br />
+floatX = float32<br />
+cxx = icpc<br />
+mode = FAST_RUN<br />
+openmp = True<br />
+openmp_elemwise_minsize = 10<br />
+allow_gc = False<br />
+<br />
+[gcc]<br />
+cxxflags = -qopenmp -march=native -O3 -qopt-report=3 -fno-alias -qopt-prefetch=2 -fp-trap=none<br />
+[blas]<br />
+ldflags=-lmkl_rt<br />
 ---
 
 ![image](https://github.com/intel/Theano/tree/dl4mt-opti/doc/images/simple-encoder-decoder_benchmark.png)
