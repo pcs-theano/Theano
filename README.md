@@ -7,7 +7,7 @@ Please refer to the document [Install_Guide.pdf](https://github.com/intel/theano
 
 
 * This dl4mt-opti dev branch is used for optimization of dl4mt.
-* Optimization includes Softmax and SoftmaxGrad.
+* Optimization includes Softmax, SoftmaxGrad etc., and other optimizations are still going on.
 
 * Benchmark is based on dl4mt-tutorial session1(https://github.com/nyu-dl/dl4mt-tutorial/tree/master/session1).
 * Dataset is parallel corpus French-English from http://www.statmt.org/europarl/. <br />
