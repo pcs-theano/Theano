@@ -10,7 +10,7 @@ Please refer to the document [Install_Guide.pdf](https://github.com/intel/theano
 * Optimization includes Softmax, SoftmaxGrad etc., and other optimizations are still going on.
 
 * Benchmark is based on dl4mt-tutorial session1(https://github.com/nyu-dl/dl4mt-tutorial/tree/master/session1).
-* Dataset is parallel corpus French-English from http://www.statmt.org/europarl/. <br />
+* Dataset is parallel corpus French-English from http://www.statmt.org/europarl. <br />
   Need use the tools from dl4mt-tutorial to generate the files below:
      * datasets: europarl-v7.fr-en.en.tok, europarl-v7.fr-en.fr.tok
      * valid_datasets: newstest2011.en.tok, newstest2011.fr.tok
