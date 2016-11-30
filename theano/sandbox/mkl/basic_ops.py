@@ -3,6 +3,7 @@ from theano.gof import Apply, Op
 from theano.tensor.blas import ldflags
 from theano.sandbox.mkl import mkl_helper
 from theano.gradient import DisconnectedType
+from theano.tensor.nnet.abstract_conv import get_conv_output_shape
 
 
 class MKLOp(Op):
@@ -965,5 +966,180 @@ class U2ILRN(MKLOp):
             #ifdef __DEBUG__
                 printf(\"U2ILRN: from_buffer %%x to_buffer %%x\\n\", convert_resources[dnnResouceFrom], convert_resources[dnnResourceTo]);
             #endif
+        """ % locals()
+        return ccode
+
+
+class U2IConv(MKLOp):
+    __props__ = ('imshp', 'kshp', 'border_mode', 'subsample', 'filter_dilation', 'uniq_id')
+
+    def __init__(self, imshp=None, kshp=None, border_mode='valid', subsample=(1, 1), filter_dilation=(1, 1), uniq_id=0):
+        super(U2IConv, self).__init__(uniq_id)
+        self.border_mode = border_mode
+        self.subsample = tuple(subsample)
+        self.imshp = imshp
+        self.kshp = kshp
+        self.filter_dilation = filter_dilation
+
+    def __eq__(self, other):
+        if hasattr(self, '__props__'):
+            if type(self) != type(other):
+                return False
+            else:
+                self_props = [getattr(self, p) for p in self.__props__ if p != 'uniq_id']
+                other_props = [getattr(other, p) for p in other.__props__ if p != 'uniq_id']
+                if self_props == other_props:
+                    return True
+                else:
+                    return False
+        else:
+            return NotImplemented
+
+    def __hash__(self):
+        return hash(self.imshp) ^ hash(self.kshp) ^ hash(self.border_mode) ^ hash(self.subsample) ^ hash(self.filter_dilation)
+
+    def __str__(self):
+        if hasattr(self, '__props__'):
+            return '%s{%s}' % (self.__class__.__name__, ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+        else:
+            return '%s' % (self.__class__.__name__)
+
+    def make_node(self, x):
+        print("@@@Patric U2I_Conv make_node")
+        x = T.as_tensor_variable(x)
+        return Apply(self, [x], [x.type()])
+
+    def grad(self, inp, grads):
+        x, = inp
+        gz, = grads
+        return [U2IGrad(uniq_id=self.uniq_id)(x, gz)]
+
+    def c_code(self, node, name, inp, out, sub):
+        x, = inp
+        dH, dW = node.op.subsample
+
+        grp = 1
+
+        i_n, i_c, i_h, i_w = node.op.imshp
+        k_n, k_c, k_h, k_w = node.op.kshp
+        o_n, o_c, o_h, o_w = get_conv_output_shape(image_shape=node.op.imshp,
+                                                   kernel_shape=node.op.kshp,
+                                                   border_mode=node.op.border_mode,
+                                                   filter_dilation=node.op.filter_dilation,
+                                                   subsample=node.op.subsample)
+
+        if node.op.border_mode == 'valid':
+            padH, padW = (0, 0)
+        elif node.op.border_mode == 'full':
+            padH, padW = ((k_h - 1), (k_w - 1))
+        elif node.op.border_mode == 'half':
+            padH, padW = ((k_h / 2), (k_w / 2))
+        elif isinstance(node.op.border_mode, tuple):
+            padH, padW = self.border_mode
+        else:
+            raise ValueError("border_mode must have two elements")
+
+        z, = out
+
+        if 'float32' == node.inputs[0].type.dtype:
+            precision = 'F32'
+        elif 'float64' == node.inputs[0].type.dtype:
+            precision = 'F64'
+        else:
+            raise Exception("Type %s is not supported!" %
+                            node.inputs[0].type.dtype)
+        fail = sub['fail']
+
+	ccode = """
+           int convPadding[2];
+           size_t convStrides[2], weightSize[4], weightStrides[5], topSize[4], topStrides[5];
+           convStrides[0] = %(dW)s;
+           convStrides[1] = %(dH)s;
+           convPadding[0] = -%(padW)s;
+           convPadding[1] = -%(padH)s;
+
+           bottomSize[0] = %(i_w)s;  //w
+           bottomSize[1] = %(i_h)s;  //h
+           bottomSize[2] = %(i_c)s;  //c
+           bottomSize[3] = %(i_n)s;  //n
+           bottomStride[0] = 1;
+           bottomStride[1] = bottomSize[0];
+           bottomStride[2] = bottomSize[0] * bottomSize[1];
+           bottomStride[3] = bottomSize[0] * bottomSize[1] * bottomSize[2];
+
+           weightSize[0] = %(k_w)s;
+           weightSize[1] = %(k_h)s;
+           weightSize[2] = %(k_c)s;
+           weightSize[3] = %(k_n)s;
+           weightStrides[0] = 1;
+           weightStrides[1] = weightSize[0];
+           weightStrides[2] = weightSize[0] * weightSize[1];
+           weightStrides[3] = weightSize[0] * weightSize[1] * weightSize[2];
+           weightStrides[4] = weightSize[0] * weightSize[1] * weightSize[2] * weightSize[3];
+
+           topSize[0] = %(o_w)s;
+           topSize[1] = %(o_h)s;
+           topSize[2] = %(o_c)s;
+           topSize[3] = %(o_n)s;
+           topStrides[0] = 1;
+           topStrides[1] = topSize[0];
+           topStrides[2] = topSize[0] * topSize[1];
+           topStrides[3] = topSize[0] * topSize[1] * topSize[2];
+           topStrides[4] = topSize[0] * topSize[1] * topSize[2] * topSize[3];
+
+           const int group = %(grp)s;
+           //create user layout
+           CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_usr, DIMENSION, bottomSize, bottomStride), err );
+           CHECK_ERR( dnnGroupsConvolutionCreateForward_%(precision)s(&primitive, NULL, dnnAlgorithmConvolutionDirect, group, DIMENSION, bottomSize, topSize, weightSize, convStrides, convPadding, dnnBorderZeros), err );
+           CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_int, primitive, dnnResourceSrc), err );
+
+           if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_int))
+           {
+               if (NULL == convert_to_int)
+               {
+                   CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_to_int, layout_usr, layout_int), err );
+               }
+           }
+
+           if (NULL == %(z)s)
+           {
+               //Create PyArrayObject for output
+               %(z)s = (PyArrayObject*)PyArray_ZEROS(DIMENSION, PyArray_DIMS(%(x)s), PyArray_TYPE(%(x)s), 0);
+
+               if (NULL == %(z)s)
+               {
+                   %(fail)s
+               }
+
+           }
+
+          if (NULL == internal_ptr)
+          {
+              CHECK_ERR(  dnnAllocateBuffer_%(precision)s((void**)&internal_ptr, layout_int), err );
+          }
+
+          if (convert_to_int)
+          {
+              convert_resources[dnnResourceFrom] = (PyArray_DATA(%(x)s));
+              convert_resources[dnnResourceTo] = (void*)(internal_ptr);
+              CHECK_ERR( dnnExecute_%(precision)s(convert_to_int, convert_resources), err );
+          }
+          else
+          {
+              internal_ptr = (PyArray_DATA(%(x)s));
+          }
+
+          if (layout_int != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
+          {
+              ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_int;
+          }
+          if (internal_ptr != ((void**)PyArray_DATA(%(z)s))[1])
+          {
+              ((void**)PyArray_DATA(%(z)s))[1] = internal_ptr;
+          }
+
+          #ifdef __DEBUG__
+          printf(\"U2I_Conv: from_buffer %%x to_buffer %%x\\n\", convert_resources[dnnResouceFrom], convert_resources[dnnResourceTo]);
+          #endif
         """ % locals()
         return ccode

@@ -1,3 +1,11 @@
+Data: 2016/11/30
+Auther: Patric
+Changes:
+----------------------------------
+1. Add Conv OP/OPT mkl_conv.py/opt.py
+2. Add U2IConv basic_ops.py
+3. Fixed lots of style issues in the code 
+
 Date: 2016/11/29
 Author: Ciyong
 Changes:
