@@ -1,3 +1,10 @@
+Data: 2016/12/2
+Auther: Patric
+Changes:
+1. change convOP name
+2. change ConvGradWeight output shape
+----------------------------------
+
 Data: 2016/11/30
 Auther: Patric
 Changes:
