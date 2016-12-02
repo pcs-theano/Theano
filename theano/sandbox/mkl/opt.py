@@ -30,7 +30,8 @@ from theano.sandbox.mkl.basic_ops import (U2IGrad,
                                           )
 from theano.sandbox.mkl import mkl_relu
 from theano.sandbox.mkl import mkl_pool
-from theano.sandbox.mkl import mkl_lrn, mkl_conv
+from theano.sandbox.mkl import mkl_lrn
+from theano.sandbox.mkl import mkl_conv
 
 from theano.tensor.signal import pool
 from theano.tensor.nnet.nnet import (AbstractRelu, AbstractReluGrad)
@@ -71,8 +72,8 @@ class Cut_I2U_U2I(Optimizer):
         list_u2i = ['U2IPool', 'U2IRelu', 'U2IConv']
         list_i2u_back = ['I2UGrad']
         list_u2i_back = ['U2IGrad']
-        list_forward = ['Relu', 'Pool', 'Conv']
-        list_backward = ['ReluGrad', 'PoolGrad', 'ConvGrad']
+        list_forward = ['Relu', 'Pool', 'Conv2D']
+        list_backward = ['ReluGrad', 'PoolGrad', 'ConvGradInput', 'ConvGradWeight']
         for node in fgraph.toposort():
             # backward
             if node.op.__class__.__name__ in list_i2u_back:
@@ -395,13 +396,13 @@ def local_convForward_mkl(node):
                          filter_dilation=node.op.filter_dilation,
                          uniq_id=uniq_id)(x)
 
-    convOut = mkl_conv.conv_forward(imshp=node.op.imshp,
-                                    kshp=node.op.kshp,
-                                    border_mode=node.op.border_mode,
-                                    subsample=node.op.subsample,
-                                    filter_flip=node.op.filter_flip,
-                                    filter_dilation=node.op.filter_dilation,
-                                    uniq_id=uniq_id)(x_internal, ws)
+    convOut = mkl_conv.Conv2D(imshp=node.op.imshp,
+                              kshp=node.op.kshp,
+                              border_mode=node.op.border_mode,
+                              subsample=node.op.subsample,
+                              filter_flip=node.op.filter_flip,
+                              filter_dilation=node.op.filter_dilation,
+                              uniq_id=uniq_id)(x_internal, ws)
 
     z_user = I2U(uniq_id=uniq_id)(convOut)
     reval = z_user
@@ -432,20 +433,20 @@ def local_convGradInputs_mkl(node):
                          filter_dilation=node.op.filter_dilation,
                          uniq_id=uniq_id)(x)
 
-    convOut = mkl_conv.conv_forward(imshp=node.op.imshp,
-                                    kshp=node.op.kshp,
-                                    border_mode=node.op.border_mode,
-                                    subsample=node.op.subsample,
-                                    filter_flip=node.op.filter_flip,
-                                    filter_dilation=node.op.filter_dilation,
-                                    uniq_id=uniq_id)(x_internal, ws)
+    convOut = mkl_conv.Conv2D(imshp=node.op.imshp,
+                              kshp=node.op.kshp,
+                              border_mode=node.op.border_mode,
+                              subsample=node.op.subsample,
+                              filter_flip=node.op.filter_flip,
+                              filter_dilation=node.op.filter_dilation,
+                              uniq_id=uniq_id)(x_internal, ws)
 
     gz_internal = I2UGrad(uniq_id=uniq_id)(convOut, gz)
 
-    dx = mkl_conv.conv_gradInputs(border_mode=node.op.border_mode,
-                                  subsample=node.op.subsample,
-                                  imshp=node.op.imshp,
-                                  kshp=node.op.kshp)(x_internal, ws, gz_internal)
+    dx = mkl_conv.ConvGradInput(border_mode=node.op.border_mode,
+                                subsample=node.op.subsample,
+                                imshp=node.op.imshp,
+                                kshp=node.op.kshp)(x_internal, ws, gz_internal)
 
     dx_user = U2IGrad(uniq_id=uniq_id)(x, dx)
     rval = dx_user
@@ -466,7 +467,8 @@ def local_convGradWeights_mkl(node):
     if node.inputs[0].type.ndim != 4:
         return
 
-    x, gz, kernshp = node.inputs
+    x, gz, topshp = node.inputs
+
     ws = node.inputs[2].owner.inputs[0].owner.inputs[0]
 
     x_internal = U2IConv(imshp=node.op.imshp,
@@ -475,20 +477,23 @@ def local_convGradWeights_mkl(node):
                          filter_dilation=node.op.filter_dilation,
                          uniq_id=uniq_id)(x)
 
-    convOut = mkl_conv.conv_forward(imshp=node.op.imshp,
-                                    kshp=node.op.kshp,
-                                    border_mode=node.op.border_mode,
-                                    subsample=node.op.subsample,
-                                    filter_flip=node.op.filter_flip,
-                                    filter_dilation=node.op.filter_dilation,
-                                    uniq_id=uniq_id)(x_internal, ws)
+    convOut = mkl_conv.Conv2D(imshp=node.op.imshp,
+                              kshp=node.op.kshp,
+                              border_mode=node.op.border_mode,
+                              subsample=node.op.subsample,
+                              filter_flip=node.op.filter_flip,
+                              filter_dilation=node.op.filter_dilation,
+                              uniq_id=uniq_id)(x_internal, ws)
 
     gz_internal = I2UGrad(uniq_id=uniq_id)(convOut, gz)
 
-    dw = mkl_conv.conv_gradWeights(border_mode=node.op.border_mode,
-                                   subsample=node.op.subsample,
-                                   imshp=node.op.imshp,
-                                   kshp=node.op.kshp)(x_internal, ws, gz_internal)
+    dw = mkl_conv.ConvGradWeight(border_mode=node.op.border_mode,
+                                 subsample=node.op.subsample,
+                                 imshp=node.op.imshp,
+                                 kshp=node.op.kshp)(x_internal, ws, gz_internal)
+
+    #  NOTE: don't need to internal to user layout conversion since weight is managed by MKLOp now.
+    #  TODO: move weights out from MKLOP
 
     rval = dw
     return [rval]
@@ -498,7 +503,7 @@ conv_groupopt = theano.gof.optdb.LocalGroupDB()
 conv_groupopt.__name__ = "mkl_conv_opts"
 register_opt()(conv_groupopt)
 
-# MKLDNN-based convolution, using the same group in theano.tensor.nnet.opt
+# MKL-based convolution, using the same group with theano.tensor.nnet.opt to avoid dumlicating GEMM functions
 # It can be disabled by excluding 'conv_mkl'.
 conv_groupopt.register('local_convForward_mkl', local_convForward_mkl, 20,
                        'conv_mkl', 'fast_compile', 'fast_run')

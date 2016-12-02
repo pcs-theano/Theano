@@ -193,9 +193,9 @@ class MKLConvBase(gof.Op):
         return ccode
 
 
-class conv_forward(MKLConvBase):
-    def __init__(self, imshp=None, kshp=None, border_mode='valid', subsample=(1, 1), filter_flip=True, filter_dilation=(1, 1), uniq_id=0):
-        super(conv_forward, self).__init__(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample, uniq_id=uniq_id)
+class Conv2D(MKLConvBase):
+    def __init__(self, imshp=None, kshp=None, border_mode='valid', subsample=(1, 1), filter_flip=False, filter_dilation=(1, 1), uniq_id=0):
+        super(Conv2D, self).__init__(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample, uniq_id=uniq_id)
         self.filter_flip = filter_flip
         self.filter_dilation = filter_dilation
 
@@ -381,7 +381,7 @@ class conv_forward(MKLConvBase):
                                                         0);
                if (NULL == %(top)s) {
                    PyErr_Format(PyExc_RuntimeError,
-                                "conv_forward: Failed to allocate top of %%lld x %%lld x %%lld x %%lld",
+                                "Conv2D: Failed to allocate top of %%lld x %%lld x %%lld x %%lld",
                                 (long long)out_dim[0], (long long)out_dim[1], (long long)out_dim[2], (long long)out_dim[3]);
                    %(fail)s
                }
@@ -504,20 +504,20 @@ class conv_forward(MKLConvBase):
     def grad(self, inp, grads):
         bottom, weights = inp
         top, = grads
-        d_image = conv_gradInputs(border_mode=self.border_mode,
-                                  subsample=self.subsample,
-                                  imshp=self.imshp,
-                                  kshp=self.kshp)(bottom, weights, top)
-        d_weights = conv_gradWeights(border_mode=self.border_mode,
-                                     subsample=self.subsample,
-                                     imshp=self.imshp,
-                                     kshp=self.kshp)(bottom, weights, top)
+        d_image = ConvGradInput(border_mode=self.border_mode,
+                                subsample=self.subsample,
+                                imshp=self.imshp,
+                                kshp=self.kshp)(bottom, weights, top)
+        d_weights = ConvGradWeight(border_mode=self.border_mode,
+                                   subsample=self.subsample,
+                                   imshp=self.imshp,
+                                   kshp=self.kshp)(bottom, weights, top)
         return d_image, d_weights
 
 
-class conv_gradInputs(MKLConvBase):
-    def __init__(self, imshp=None, kshp=None, border_mode='valid', subsample=(1, 1), filter_flip=True, filter_dilation=(1, 1), uniq_id=0):
-        super(conv_gradInputs, self).__init__(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample, uniq_id=uniq_id)
+class ConvGradInput(MKLConvBase):
+    def __init__(self, imshp=None, kshp=None, border_mode='valid', subsample=(1, 1), filter_flip=False, filter_dilation=(1, 1), uniq_id=0):
+        super(ConvGradInput, self).__init__(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample, uniq_id=uniq_id)
         self.filter_flip = filter_flip
         self.filter_dilation = filter_dilation
 
@@ -806,9 +806,9 @@ class conv_gradInputs(MKLConvBase):
         return ccode
 
 
-class conv_gradWeights(MKLConvBase):
-    def __init__(self, imshp=None, kshp=None, border_mode='valid', subsample=(1, 1), filter_flip=True, filter_dilation=(1, 1), uniq_id=0):
-        super(conv_gradWeights, self).__init__(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample, uniq_id=uniq_id)
+class ConvGradWeight(MKLConvBase):
+    def __init__(self, imshp=None, kshp=None, border_mode='valid', subsample=(1, 1), filter_flip=False, filter_dilation=(1, 1), uniq_id=0):
+        super(ConvGradWeight, self).__init__(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample, uniq_id=uniq_id)
         self.filter_flip = filter_flip
         self.filter_dilation = filter_dilation
 
@@ -849,10 +849,10 @@ class conv_gradWeights(MKLConvBase):
         if topgrad.type.ndim != 4:
             raise TypeError('topgrad must be 4D tensor')
 
-        # broadcastable = [topgrad.type.broadcastable[1], image.type.broadcastable[1],
-        #                  False, False]
-        # dtype = image.type.dtype
-        return Apply(self, [image, weight, topgrad], [weight.type()])
+        broadcastable = [topgrad.type.broadcastable[1], image.type.broadcastable[1],
+                         False, False]
+        dtype = image.type.dtype
+        return Apply(self, [image, weight, topgrad], [TensorType(dtype, broadcastable)()])
 
     def c_code(self, node, name, inp, out_, sub):
         bottom, weight, topgrad = inp
