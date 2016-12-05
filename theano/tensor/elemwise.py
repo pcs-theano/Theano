@@ -1710,6 +1710,8 @@ for(int i=0;i<PyArray_NDIM(%(iname)s);i++){
             [order, list(range(nnested)) + ['x'] * len(axis)],
             [idtype, adtype], all_code, sub, ParallelFlag)
 
+        loop = cgen.elemwise_sum_parallel_handler(loop)
+
         end = ""
         if adtype != odtype:
             end = """
@@ -1725,7 +1727,7 @@ for(int i=0;i<PyArray_NDIM(%(iname)s);i++){
 
     def c_headers(self):
         # Sometimes, Elemwise's c_code is returned, so we need its headers
-        return ['<vector>', '<algorithm>']
+        return ['<vector>', '<algorithm>', '"omp.h"']
 
     def c_code_cache_version_apply(self, node):
         version = (6,)  # the version corresponding to the c code in this Op

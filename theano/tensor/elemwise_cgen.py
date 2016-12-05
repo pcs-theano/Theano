@@ -539,3 +539,47 @@ def make_loop_careduce(loop_orders, dtypes, loop_tasks, sub, flag=0):
 
     s += loop_tasks[-1]
     return "{%s}" % s
+
+def elemwise_sum_parallel_handler(loop):
+    parallel_loop_pattern = "{V3_iter=(npy_float32*)(PyArray_DATA(V3));acc_iter=(npy_float64*)(PyArray_DATA(acc));for(intITER_0=0;ITER_0<acc_n0;ITER_0++){npy_float64&acc_i=*acc_iter;acc_i=0;for(intITER_1=0;ITER_1<V3_n0;ITER_1++){for(intITER_2=0;ITER_2<V3_n1;ITER_2++){{npy_float32&V3_i=*V3_iter;acc_i=acc_i+V3_i;}V3_iter+=V3_jump1_2;acc_iter+=acc_jumpx_2;}V3_iter+=V3_jump0_1;acc_iter+=acc_jumpx_1;}V3_iter+=V3_jump2_0;acc_iter+=acc_jump0_0;}}"
+    tmp_loop = loop.replace("\n", "")
+    tmp_loop = tmp_loop.replace(" ", "")
+    if tmp_loop == parallel_loop_pattern:
+        return """
+{
+    V3_iter = (npy_float32*)(PyArray_DATA(V3));
+    acc_iter = (npy_float64*)(PyArray_DATA(acc));
+
+    int num_proc = omp_get_num_procs();
+    #pragma omp parallel num_threads(num_proc)
+    {
+        int tid = omp_get_thread_num();
+        for (int ITER_0 = tid; ITER_0 < acc_n0; ITER_0+=num_proc) {
+
+            npy_float32* _V3_iter = V3_iter + ITER_0*(V3_n0*(V3_n1*V3_jump1_2 + V3_jump0_1) + V3_jump2_0);
+            npy_float64* _acc_iter = acc_iter + ITER_0*(V3_n0*(V3_n1*acc_jumpx_2 + acc_jumpx_1) + acc_jump0_0);
+
+            npy_float64& acc_i = *_acc_iter;
+            acc_i = 0;
+            for (int ITER_1 = 0; ITER_1 < V3_n0; ITER_1++) {
+                for (int ITER_2 = 0; ITER_2 < V3_n1; ITER_2++) {
+                    {
+                        npy_float32& V3_i = *_V3_iter;
+
+                        acc_i = acc_i + V3_i;
+                    }
+
+                    _V3_iter += V3_jump1_2;
+                    _acc_iter += acc_jumpx_2;
+
+                }
+                _V3_iter += V3_jump0_1;
+                _acc_iter += acc_jumpx_1;
+
+            }
+        }
+    }
+}"""
+    else:
+        return loop
+
