@@ -4,12 +4,13 @@ import numpy
 
 import theano
 from theano.tensor.blas import ldflags
-from theano import gof, tensor, Apply
+from theano import tensor, Apply
 from theano.sandbox.mkl import mkl_helper
 from theano.gradient import DisconnectedType
+from theano.sandbox.mkl.basic_ops import MKLOp
 
 
-class PoolBase(gof.Op):
+class PoolBase(MKLOp):
     def __init__(self, ignore_border=True, mode='max'):
 
         if not ignore_border:

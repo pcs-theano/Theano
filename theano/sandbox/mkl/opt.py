@@ -194,15 +194,12 @@ def local_pool_mkl(node):
 
 
 @register_opt()
-@local_optimizer([pool.MaxPoolGrad])
+@local_optimizer([pool.MaxPoolGrad, pool.AveragePoolGrad])
 def local_poolGrad_mkl(node):
     global uniq_id
     uniq_id += 1
 
     if not mkl_available():
-        return
-
-    if not isinstance(node.op, pool.MaxPoolGrad):
         return
 
     if node.inputs[0].type.ndim != 4:
@@ -215,7 +212,14 @@ def local_poolGrad_mkl(node):
     if not node.op.ignore_border:
         return
 
-    x, maxout, gz, ws, stride, pad = node.inputs
+    if isinstance(node.op, pool.MaxPoolGrad):
+        x, maxout, gz, ws, stride, pad = node.inputs
+    elif isinstance(node.op, pool.AveragePoolGrad):
+        x, gz, ws, stride, pad = node.inputs
+    else:
+        # Other pool mode is not supported
+        return
+
     if stride is None:
         stride = ws
 
