@@ -337,7 +337,7 @@ class Pool(PoolBase):
         if 'max' == self.mode:
             algo = "dnnAlgorithmPoolingMax"
         elif 'min' == self.mode:
-            mode = 'dnnAlgorithmPoolingMin'
+            algo = 'dnnAlgorithmPoolingMin'
         elif self.mode.startswith('average'):
             algo = "dnnAlgorithmPoolingAvg"
         else:
@@ -703,7 +703,7 @@ class PoolGrad(PoolBase):
         if 'max' == self.mode:
             algo = "dnnAlgorithmPoolingMax"
         elif 'min' == self.mode:
-            mode = 'dnnAlgorithmPoolingMin'
+            algo = 'dnnAlgorithmPoolingMin'
         elif self.mode.startswith('average'):
             algo = "dnnAlgorithmPoolingAvg"
         else:
