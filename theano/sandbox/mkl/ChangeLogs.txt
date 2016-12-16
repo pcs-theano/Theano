@@ -9,6 +9,15 @@ sandbox/mkl/mkl_lrn.py.
 4. Fix Pooling Grad bug in sandbox/mkl/tests/test_opt.py.
 
 
+Date: 2016/12/14
+Author: Ciyong
+Changes:
+----------------------------------
+1. Update the condition of relu Op to enable MKL relu if necessary
+2. Add 4D and 2D tensor input for relu UT
+3. Fix typo in Pool Op
+
+
 Date: 2016/12/12
 Author: Ciyong
 Changes:

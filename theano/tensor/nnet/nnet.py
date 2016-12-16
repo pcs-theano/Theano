@@ -18,7 +18,6 @@ import numpy
 from six.moves import xrange
 
 import theano
-#import theano.sandbox.mkl
 from theano import gof
 from theano import scalar
 from theano.tensor import extra_ops
@@ -2224,9 +2223,9 @@ def relu(x, alpha=0):
     # the graph.
     # Otherwise, Use the default relu function as it was.
 
-    ## FIXME, call mkl_available will cause theano.tensor error issue....
-    #if mkl_available is True:
-    return AbstractRelu(slope=alpha)(x)
+    if theano.sandbox.mkl.mkl_available.avail and \
+       isinstance(x, theano.Variable) and x.type.ndim == 4:
+        return AbstractRelu(slope=alpha)(x)
 
     # This is probably the fastest implementation for GPUs. Both the forward
     # pass and the gradient get compiled into a single GpuElemwise call.
@@ -2246,6 +2245,7 @@ def relu(x, alpha=0):
 
 class AbstractRelu(gof.Op):
     __props__ = ('slope',)
+
     def __init__(self, slope=1):
         self.slope = slope
 
@@ -2265,12 +2265,13 @@ class AbstractRelu(gof.Op):
     def perform(self, node, inp, out_):
         x, = inp
         z, = out_
-        
-        z = x
+
+        z[0] = x
 
 
 class AbstractReluGrad(gof.Op):
     __props__ = ('slope',)
+
     def __init__(self, slope=1):
         self.slope = slope
 
@@ -2285,8 +2286,8 @@ class AbstractReluGrad(gof.Op):
     def perform(self, node, inp, out_):
         x, gz = inp
         gx, = out_
-        
-        gx = gz
+
+        gx[0] = gz
 
 
 def h_softmax(x, batch_size, n_outputs, n_classes, n_outputs_per_class,
