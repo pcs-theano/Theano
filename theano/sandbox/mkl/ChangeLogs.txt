@@ -1,3 +1,14 @@
+Date: 2016/12/16
+Author: lvtao
+Changes:
+----------------------------------
+1. Add test_lrn.py file to sandbox/mkl/tests/.
+2. Move AbstractLRN and AbstractLRNGrad from tensor/nnet/lrn.py to
+sandbox/mkl/mkl_lrn.py.
+3. Fix flake8 errors of sandbox/mkl/mkl_lrn.py.
+4. Fix Pooling Grad bug in sandbox/mkl/tests/test_opt.py.
+
+
 Date: 2016/12/12
 Author: Ciyong
 Changes:

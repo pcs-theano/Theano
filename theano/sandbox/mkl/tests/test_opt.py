@@ -2,13 +2,11 @@ from __future__ import absolute_import, print_function, division
 import numpy
 # Skip test if mkl is not available.
 from nose.plugins.skip import SkipTest
-from nose.tools import assert_raises
-
 import theano
-from theano import config, tensor, scalar, gof
+from theano import tensor, scalar
 from theano.compile.ops import Shape_i
 import theano.sandbox.mkl as mkl
-from theano.tensor import TensorConstant, Elemwise, Alloc
+from theano.tensor import TensorConstant, Alloc
 from theano.tensor.signal import pool
 
 from theano.sandbox.mkl.basic_ops import (U2IGrad,
@@ -104,8 +102,8 @@ def test_mkl_pool_forward():
 
 def test_mkl_pool_backward():
 
-    predefineOps = [Shape_i, Shape_i, Shape_i, Shape_i, U2IPool,
-                    Elemwise, Elemwise, mkl.mkl_pool.Pool, Alloc, I2UGrad, mkl.mkl_pool.PoolGrad, U2IGrad]
+    predefineOps = [U2IPool, mkl.mkl_pool.Pool, I2U, Shape_i, Shape_i, Shape_i, Shape_i,
+                    Alloc, I2UGrad, mkl.mkl_pool.PoolGrad, U2IGrad]
 
     maxpoolshps = ((1, 1), (2, 2), (3, 3), (2, 3))
     imval = numpy.random.rand(4, 2, 16, 16).astype(theano.config.floatX)
@@ -126,29 +124,32 @@ def test_mkl_pool_backward():
 
     assert len(inputs) == 1
     assert len(outputs) == 1
-    assert len(topo) == 12
+    assert len(topo) == 11
 
     for i, node in enumerate(topo):
         assert isinstance(node.op, predefineOps[i])
 
     # U2IPool
-    assert len(topo[4].inputs) == 4
-    assert isinstance(topo[4].inputs[1], TensorConstant)
-    assert isinstance(topo[4].inputs[3], TensorConstant)
-    assert topo[4].inputs[1] == topo[4].inputs[2]
+    assert len(topo[0].inputs) == 4
+    assert isinstance(topo[0].inputs[1], TensorConstant)
+    assert isinstance(topo[0].inputs[3], TensorConstant)
+    assert topo[0].inputs[1] == topo[0].inputs[2]
+    # Pool
+    assert len(topo[1].inputs) == 4
+    assert topo[1].inputs[0].owner == topo[0]
     # I2UGrad
-    assert len(topo[9].inputs) == 2
-    assert topo[9].inputs[0].owner == topo[7]
-    assert topo[9].inputs[1].owner == topo[8]
+    assert len(topo[8].inputs) == 2
+    assert topo[8].inputs[0].owner == topo[1]
+    assert topo[8].inputs[1].owner == topo[7]
     # poolGrad
-    assert len(topo[10].inputs) == 5
-    assert topo[10].inputs[0].owner == topo[4]
-    assert topo[10].inputs[1].owner == topo[9]
+    assert len(topo[9].inputs) == 5
+    assert topo[9].inputs[0].owner == topo[0]
+    assert topo[9].inputs[1].owner == topo[8]
     # U2IGrad
-    assert len(topo[11].inputs) == 2
-    assert topo[11].inputs[1].owner == topo[10]
+    assert len(topo[10].inputs) == 2
+    assert topo[10].inputs[1].owner == topo[9]
     # Output
-    assert outputs[0].owner == topo[11]
+    assert outputs[0].owner == topo[10]
 
     f1 = theano.function(inputs=[images, ], outputs=poolBackward, mode=mode_without_mkl)
     assert (numpy.asarray(f(imval)) == f1(imval)).all()
@@ -157,7 +158,6 @@ def test_mkl_pool_backward():
 
 
 def test_mkl_relu_forward():
-    shape = (256, 96, 55, 55)
     if theano.config.floatX == 'float32':
         x = tensor.ftensor4('x')
     else:
@@ -193,8 +193,10 @@ def test_mkl_relu_forward():
     imval = numpy.random.rand(256, 96, 55, 55).astype(theano.config.floatX)
 
     f1 = theano.function(inputs=[x], outputs=yy, mode=mode_without_mkl)
-    
-    #assert numpy.all(f(imval) == f1(imval))
+
+    # assert numpy.all(f(imval) == f1(imval))
+    f(imval)
+    f1(imval)
     print('test_mkl_relu_forward() pass..')
 
 
@@ -236,7 +238,7 @@ def test_mkl_pool_relu():
     x = tensor.ftensor4('x')
     y = tensor.nnet.AbstractRelu(slope=1)(x)
     maxpoolshps = ((1, 1), (2, 2), (3, 3), (2, 3))
-    imval = numpy.random.rand(4, 2, 16, 16).astype(theano.config.floatX)
+    # imval = numpy.random.rand(4, 2, 16, 16).astype(theano.config.floatX)
     ignore_border = True
     mode = 'max'
     poolOut = pool.pool_2d(y, maxpoolshps[0], ignore_border, mode=mode)
@@ -300,7 +302,7 @@ def test_mkl_lrn_forward():
 
 
 def test_mkl_lrn_backward():
-    predefineOps = [U2ILRN, mkl.mkl_lrn.LRN, I2U, 
+    predefineOps = [U2ILRN, mkl.mkl_lrn.LRN, I2U,
                     Shape_i, Shape_i, Shape_i, Shape_i, Alloc, I2UGrad, mkl.mkl_lrn.LRNGrad, U2IGrad]
 
     if theano.config.floatX == 'float32':
@@ -319,7 +321,7 @@ def test_mkl_lrn_backward():
     assert len(topo) == 11
 
     for i, node in enumerate(topo):
-        isinstance(node.op, predefineOps[i])
+        assert isinstance(node.op, predefineOps[i])
 
     # U2I_LRN
     assert len(topo[0].inputs) == 1
@@ -360,7 +362,7 @@ def test_mkl_opt_with_wrong_dim():
         x = tensor.dtensor3()
 
     imval = numpy.random.rand(3, 4, 5).astype(theano.config.floatX)
-    
+
     try:
         y = tensor.nnet.relu(x)
         f = theano.function([x], y, mode=mode_with_mkl)
@@ -374,7 +376,7 @@ def test_mkl_opt_with_wrong_dim():
 
     except Exception as e:
         raise Exception('nnet.relu(x) ' + str(e))
-    
+
     try:
         z = pool.pool_2d(x, (2, 2), True, mode='max')
         f1 = theano.function([x], z, mode=mode_with_mkl)
@@ -416,8 +418,8 @@ def test_mkl_3_relu_forward():
 
 
 def test_mkl_3_relu_backward():
-    predefineOPs = [U2IRelu, mkl.mkl_relu.Relu, mkl.mkl_relu.Relu, mkl.mkl_relu.Relu, I2U, 
-                    Shape_i, Shape_i, Shape_i, Shape_i, Alloc, I2UGrad, 
+    predefineOps = [U2IRelu, mkl.mkl_relu.Relu, mkl.mkl_relu.Relu, mkl.mkl_relu.Relu, I2U,
+                    Shape_i, Shape_i, Shape_i, Shape_i, Alloc, I2UGrad,
                     mkl.mkl_relu.ReluGrad, mkl.mkl_relu.ReluGrad, mkl.mkl_relu.ReluGrad, U2IGrad]
     if theano.config.floatX == 'float32':
         x = tensor.ftensor4()
@@ -439,6 +441,9 @@ def test_mkl_3_relu_backward():
     assert len(inputs) == 1
     assert len(outputs) == 1
     assert len(topo) == 15
+
+    for i, node in enumerate(topo):
+        assert isinstance(node.op, predefineOps[i])
 
     # U2IRelu
     assert len(topo[0].inputs) == 1
@@ -471,4 +476,3 @@ if __name__ == '__main__':
         test_mkl_3_relu_backward()
     else:
         print('Optional package MKL disabled')
-

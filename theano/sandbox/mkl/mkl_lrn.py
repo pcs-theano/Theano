@@ -1,12 +1,60 @@
-import __builtin__
-
-import sys
-import numpy
-import theano
-from theano import gof, Op, tensor, Variable, Apply
-from theano.tensor import as_tensor_variable, TensorType
-from theano.tensor.blas import ldflags, blas_header_version
+from theano import gof, tensor, Variable
+from theano.tensor.blas import ldflags
 from theano.sandbox.mkl import mkl_helper, basic_ops
+
+
+class AbstractLRN(gof.Op):
+    __props__ = ('slope', 'alpha', 'beta', 'k', 'n')
+
+    def __init__(self, slope=1, alpha=1e-4, beta=0.75, k=2, n=5):
+        self.alpha = alpha
+        self.beta = beta
+        self.k = k
+        self.n = n
+        self.slope = slope
+
+    def make_node(self, x):
+        if x.type.ndim != 4:
+            raise TypeError()
+        x = tensor.as_tensor_variable(x)
+        return gof.Apply(self, [x], [x.type()])
+
+    def grad(self, inp, grads):
+        x, = inp
+        gz, = grads
+        return [AbstractLRNGrad(slope=self.slope,
+                                alpha=self.alpha,
+                                beta=self.beta,
+                                k=self.k,
+                                n=self.n)(x, gz)]
+
+    def perform(self, node, inp, out_):
+        x, = inp
+        z, = out_
+
+
+class AbstractLRNGrad(gof.Op):
+    __props__ = ('slope', 'alpha', 'beta', 'k', 'n')
+
+    def __init__(self, slope=1, alpha=1e-4, beta=0.75, k=2, n=5, fp='default.txt'):
+        self.slope = slope
+        self.alpha = alpha
+        self.beta = beta
+        self.k = k
+        self.n = n
+        self.fp = fp
+
+    def make_node(self, x, gz):
+        if x.type.ndim != 4:
+            raise TypeError()
+        x = tensor.as_tensor_variable(x)
+        return gof.Apply(self, [x, gz], [x.type()])
+
+    def perform(self, node, inp, out_):
+        x, gz = inp
+        gx, = out_
+        # gx = gz
+
 
 class LRN(basic_ops.MKLOp):
     """
@@ -30,13 +78,14 @@ class LRN(basic_ops.MKLOp):
     n    : indicates how many nearby maps to use for normalization.
     """
     __props__ = ('uniq_id', 'alpha', 'beta', 'k', 'size')
-    def __init__(self, uniq_id=0, alpha = 1e-4, beta = 0.75, k=2, n = 5):
+
+    def __init__(self, uniq_id=0, alpha=1e-4, beta=0.75, k=2, n=5):
         self.alpha = alpha
         self.beta = beta
         self.size = n
         self.k = k
         self.uniq_id = uniq_id
-        self.fp = 'p_lrn'+str(uniq_id)
+        self.fp = 'p_lrn' + str(uniq_id)
 
     def __eq__(self, other):
         if hasattr(self, '__props__'):
@@ -58,7 +107,7 @@ class LRN(basic_ops.MKLOp):
     def __str__(self):
         if hasattr(self, '__props__'):
             return '%s{%s}' % (self.__class__.__name__,
-                            ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+                               ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
         else:
             return '%s' % (self.__class__.__name__)
 
@@ -71,11 +120,11 @@ class LRN(basic_ops.MKLOp):
     def grad(self, inp, grads):
         x, = inp
         gz, = grads
-        return [LRNGrad(uniq_id = self.uniq_id, alpha=self.alpha,
-            beta=self.beta, k=self.k, n=self.size, fp=self.fp)(x, gz)]
+        return [LRNGrad(uniq_id=self.uniq_id, alpha=self.alpha,
+                        beta=self.beta, k=self.k, n=self.size, fp=self.fp)(x, gz)]
 
     def c_support_code(self):
-        return mkl_helper.header_text()+"""
+        return mkl_helper.header_text() + """
             static dnnLayout_t fwd_bottom_data_usr_l;
             static dnnPrimitive_t fwd_bottom_convert_to_int;
             static dnnPrimitive_t fwd_bottom_convert_from_int;
@@ -123,7 +172,7 @@ class LRN(basic_ops.MKLOp):
         return ccode
 
     def c_headers(self):
-        return ['<math.h>','<iostream>','<fstream>']
+        return ['<math.h>', '<iostream>', '<fstream>']
 
     def c_lib_dirs(self):
         return ldflags(libs=False, libs_dir=True)
@@ -138,8 +187,8 @@ class LRN(basic_ops.MKLOp):
         beta = self.beta
         size = self.size
         k = self.k
-        fp=self.fp
-        
+        fp = self.fp
+
         dtype = str(node.__dict__['inputs'][0].dtype)
         assert dtype in ('float32', 'float64')
 
@@ -147,7 +196,7 @@ class LRN(basic_ops.MKLOp):
             precision = 'F32'
         else:
             precision = 'F64'
-        
+
         ret = """
         {
             #if __DEBUG__
@@ -254,8 +303,8 @@ class LRN(basic_ops.MKLOp):
             std::cout<<"lrn fwd end\\n"<<std::endl;
             #endif
         }
-	""" % locals()
-	return ret
+        """ % locals()
+        return ret
 
     def c_code_cache_version(self):
         return (0, 1, self.uniq_id)
@@ -275,13 +324,14 @@ class LRNGrad(basic_ops.MKLOp):
 
     """
     __props__ = ('uniq_id', 'alpha', 'beta', 'k', 'size')
+
     def __init__(self, uniq_id=0, alpha=1e-4, beta=0.75, k=2, n=5, fp='default.txt'):
-      self.alpha = alpha
-      self.beta = beta
-      self.k = k
-      self.size = n
-      self.uniq_id = uniq_id
-      self.fp = fp
+        self.alpha = alpha
+        self.beta = beta
+        self.k = k
+        self.size = n
+        self.uniq_id = uniq_id
+        self.fp = fp
 
     def __eq__(self, other):
         if hasattr(self, '__props__'):
@@ -303,12 +353,12 @@ class LRNGrad(basic_ops.MKLOp):
     def __str__(self):
         if hasattr(self, '__props__'):
             return '%s{%s}' % (self.__class__.__name__,
-                            ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
+                               ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
         else:
             return '%s' % (self.__class__.__name__)
 
     def c_headers(self):
-        return ['<math.h>', '<fstream>'] ##FIXME
+        return ['<math.h>', '<fstream>']  # FIXME
 
     def c_lib_dirs(self):
         return ldflags(libs=False, libs_dir=True)
@@ -332,7 +382,7 @@ class LRNGrad(basic_ops.MKLOp):
         return ccode
 
     def c_support_code(self):
-        return mkl_helper.header_text()+"""
+        return mkl_helper.header_text() + """
         static int first_run=1;
         static int typenum;
         static int x_bs;
@@ -365,12 +415,14 @@ class LRNGrad(basic_ops.MKLOp):
         """
 
     def make_node(self, x, gz):
-        assert isinstance(x, Variable) and x.ndim == 4
-        assert isinstance(gz, Variable) and gz.ndim == 4
+        if not isinstance(x, Variable) or x.ndim != 4:
+            raise TypeError('Input x type error or dimension error.')
+        if not isinstance(gz, Variable) or gz.ndim != 4:
+            raise TypeError('Inputs gz type error or dimension error.')
         return gof.Apply(self, [x, gz], [x.type()])
 
     def c_code(self, node, name, inp, out, sub):
-        x, gz,  =inp
+        x, gz, = inp
         z, = out
         alpha = self.alpha
         beta = self.beta
@@ -471,4 +523,3 @@ class LRNGrad(basic_ops.MKLOp):
 
     def c_code_cache_version(self):
         return (0, 1, self.uniq_id)
-
