@@ -18,7 +18,7 @@ Please refer to the document [Install_Guide.pdf](https://github.com/intel/theano
 
 * Statistics time is 1000 iters total time in session1.
 * Software dependency:
-     * [Optimized-numpy](https://github.com/intel/numpy.git)
+     * [Optimized-numpy](https://github.com/intel/numpy/tree/dl4mt-opti). Make sure use the dl4mt-opti branch numpy
      * Intel® Math Kernel Library-(201609)
      * Intel® C++ Compiler version 17.0.0
 * Hardware dependency:
