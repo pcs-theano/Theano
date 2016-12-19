@@ -39,5 +39,5 @@ cxxflags = -qopenmp -march=native -O3 -qopt-report=3 -fno-alias -qopt-prefetch=2
 [blas]<br />
 ldflags=-lmkl_rt<br /></code></pre>
 
-* Benchmark
+* Benchmark<br />
 ![](https://raw.githubusercontent.com/intel/Theano/dl4mt-opti/doc/images/simple-encoder-decoder_benchmark.png)
