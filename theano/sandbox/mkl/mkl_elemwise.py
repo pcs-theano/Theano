@@ -1,4 +1,3 @@
-from theano import gof
 from theano.gof import Apply
 from theano.tensor import as_tensor_variable, TensorType
 from theano.tensor.basic import Join

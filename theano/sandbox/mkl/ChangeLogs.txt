@@ -1,3 +1,23 @@
+Date: 2016/12/20
+Author: lvtao
+Changes:
+----------------------------------
+1. Update mkl_conv, mkl_elemwise and unit tests for the ops.
+2. Update opt.py for global optimizations of ReplaceConvBias and
+ReplaceElemwiseSum.
+3. Update regression test script to support test_conv.py, test_lrn.py and
+test_elemwise.py.
+
+
+Date: 2016/12/20
+Author: Ciyong
+Changes:
+----------------------------------
+1. Add regression test for mkl module
+2. Add retry for pool and relu opt
+3. Remove useless codes
+
+
 Date: 2016/12/16
 Author: lvtao
 Changes:

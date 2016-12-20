@@ -143,7 +143,6 @@ class TestDownsampleFactorMax(utt.InferShapeTester):
         
         out_shp = list(input.shape[:-2])
         out_shp.extend([out_h, out_w])
-        print ('out_shp: ', out_shp)
 
         func = numpy.max
         if mode == 'sum':

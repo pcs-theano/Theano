@@ -10,9 +10,6 @@ class MKLOp(Op):
     def __init__(self, uniq_id=0):
         self.uniq_id = uniq_id
 
-    def c_headers(self):
-        return super(MKLOp, self).c_headers()
-
     def c_lib_dirs(self):
         return ldflags(libs=False, libs_dir=True)
 
@@ -27,7 +24,6 @@ class MKLOp(Op):
     def c_support_code(self):
         ccode = mkl_helper.header_text()
         ccode += """
-            //#define _DEBUG_
             #define DIMENSION  4
 
             #define CHECK_ERR(f, err) \\
@@ -42,7 +38,7 @@ class MKLOp(Op):
 
             static dnnError_t err;
             static int first_run = 1;
-            static void* internal_ptr = NULL; //mkl data buffer
+            static void* internal_ptr = NULL;
             static void* usr_ptr = NULL;
             static dnnLayout_t layout_int = NULL;
             static dnnLayout_t layout_usr = NULL;
@@ -83,13 +79,6 @@ class U2IPool(MKLOp):
 
     def __hash__(self):
         return hash(self.ignore_border) ^ hash(self.mode)
-
-    def __str__(self):
-        if hasattr(self, '__props__'):
-            return '%s{%s}' % (self.__class__.__name__,
-                               ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
-        else:
-            return '%s' % (self.__class__.__name__)
 
     def make_node(self, x, ws, stride=None, pad=(0, 0)):
         x = T.as_tensor_variable(x)
@@ -175,7 +164,6 @@ class U2IPool(MKLOp):
             }
 
             if (NULL == %(z)s) {
-                //create PyArrayObject for output
                 %(z)s = (PyArrayObject*)PyArray_ZEROS(DIMENSION,
                                                       PyArray_DIMS(%(x)s),
                                                       PyArray_TYPE(%(x)s),
@@ -205,7 +193,7 @@ class U2IPool(MKLOp):
 
             first_run = 0;
 
-            #ifdef __DEBUG__
+            #ifdef _MKL_DEBUG_
                 printf(\"U2IPool: from_buffer %%x to_buffer %%x\\n\",convert_resources[dnnResourceFrom],convert_resources[dnnResourceTo]);
             #endif
         """ % locals()
@@ -288,7 +276,7 @@ class I2U(MKLOp):
                 size_t *out_stride = (size_t *)malloc(ndim * sizeof(size_t));
                 if(NULL == bottom_size || NULL == out_stride) {
                     printf(\"ERROR: malloc buffer in I2U \\n\");
-                    exit(-1);
+                    exit(1);
                 }
 
                 npy_intp dataSize = 1;
@@ -307,7 +295,7 @@ class I2U(MKLOp):
                 free(out_stride);
 
                 //Get layerout and internal buffer from input.
-                layout_int = ((dnnLayout_t*)PyArray_DATA(%(x)s))[0];//get internal layerout
+                layout_int = ((dnnLayout_t*)PyArray_DATA(%(x)s))[0];
                 internal_ptr = ((void**)PyArray_DATA(%(x)s))[1];
 
                 CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_from_int, layout_int, layout_usr), err );
@@ -412,7 +400,6 @@ class U2IRelu(MKLOp):
             }
 
             if (NULL == %(z)s) {
-                //create PyArrayObject for output
                 %(z)s = (PyArrayObject*)PyArray_ZEROS(DIMENSION,
                                                       PyArray_DIMS(%(x)s),
                                                       PyArray_TYPE(%(x)s),
@@ -427,7 +414,7 @@ class U2IRelu(MKLOp):
             }
 
             if (convert_to_int) {
-                convert_resources[dnnResourceFrom] = (PyArray_DATA(%(x)s));
+                convert_resources[dnnResourceFrom] = PyArray_DATA(%(x)s);
                 convert_resources[dnnResourceTo] = (void *)(internal_ptr);
 
                 CHECK_ERR( dnnExecute_%(precision)s(convert_to_int, convert_resources), err );
@@ -442,7 +429,7 @@ class U2IRelu(MKLOp):
 
             first_run = 0;
 
-            #ifdef __DEBUG__
+            #ifdef _MKL_DEBUG_
                 printf(\"U2IRelu: from_buffer %%x to_buffer %%x\\n\",convert_resources[dnnResourceFrom],convert_resources[dnnResourceTo]);
             #endif
         """ % locals()
@@ -604,14 +591,10 @@ class U2IGrad(MKLOp):
 
         convert_resources[dnnResourceFrom] = internal_ptr;
         convert_resources[dnnResourceTo] = (void*)PyArray_DATA(%(z)s);
-        #ifdef _DEBUG_
+        #ifdef _MKL_DEBUG_
             printf(\"%%x, %%x , %%x to %%x\\n\",convert_from_int,layout_int,internal_ptr,convert_resources[dnnResourceTo]);
         #endif
-        if(dnnLayoutGetMemorySize_%(precision)s(layout_int) != PyArray_DIMS(%(z)s)[0]*PyArray_STRIDES(%(z)s)[0])
-        {
-               //printf(\"U2IGrad_Error: int: %%d != usr: %%d\\n\",dnnLayoutGetMemorySize_%(precision)s(layout_int),PyArray_DIMS(%(z)s)[0]*PyArray_STRIDES(%(z)s)[0]);
-               //printf(\"U2IGrad DIM: %%d, %%d, %%d, %%d\\n\",PyArray_DIMS(%(z)s)[0],PyArray_DIMS(%(z)s)[1],PyArray_DIMS(%(z)s)[2],PyArray_DIMS(%(z)s)[3]);
-        }
+
         //cvt
         status = dnnExecute_%(precision)s(convert_from_int, convert_resources);
         if(0 != status)
@@ -952,10 +935,12 @@ class U2ILRN(MKLOp):
             {
                 internal_ptr = (PyArray_DATA(%(x)s));
             }
+
             if (layout_int != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
             {
                 ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_int;
             }
+
             if (internal_ptr != ((void**)PyArray_DATA(%(z)s))[1])
             {
                 ((void**)PyArray_DATA(%(z)s))[1] = internal_ptr;
@@ -963,7 +948,7 @@ class U2ILRN(MKLOp):
 
             first_run = 0;
 
-            #ifdef __DEBUG__
+            #ifdef _MKL_DEBUG_
                 printf(\"U2ILRN: from_buffer %%x to_buffer %%x\\n\", convert_resources[dnnResouceFrom], convert_resources[dnnResourceTo]);
             #endif
         """ % locals()
@@ -1005,7 +990,6 @@ class U2IConv(MKLOp):
             return '%s' % (self.__class__.__name__)
 
     def make_node(self, x):
-        print("@@@Patric U2I_Conv make_node")
         x = T.as_tensor_variable(x)
         return Apply(self, [x], [x.type()])
 

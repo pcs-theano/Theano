@@ -3,6 +3,7 @@ import logging
 
 _logger = logging.getLogger('theano.tensor.nnet.mkl_helper')
 
+
 def header_text():
     """ C header for mkl dnn primitive interface """
     header = """
@@ -25,14 +26,14 @@ def header_text():
 
         struct _uniPrimitive_s {};
         struct _dnnLayout_s {};
-    
+
         typedef struct _uniPrimitive_s* dnnPrimitive_t;
         typedef struct _dnnLayout_s* dnnLayout_t;
         typedef void* dnnPrimitiveAttributes_t;
-    
+
         #define DNN_MAX_DIMENSION       32
         #define DNN_QUERY_MAX_LENGTH    128
-    
+
         typedef enum {
             E_SUCCESS                   =  0,
             E_INCORRECT_INPUT_PARAMETER = -1,
@@ -41,7 +42,7 @@ def header_text():
             E_UNSUPPORTED_DIMENSION     = -4,
             E_UNIMPLEMENTED             = -127
         } dnnError_t;
-    
+
         typedef enum {
             dnnAlgorithmConvolutionGemm  , // GEMM based convolution
             dnnAlgorithmConvolutionDirect, // Direct convolution
@@ -50,7 +51,7 @@ def header_text():
             dnnAlgorithmPoolingMin       , // Minimum pooling
             dnnAlgorithmPoolingAvg         // Average pooling
         } dnnAlgorithm_t;
-    
+
         typedef enum {
             dnnResourceSrc            = 0,
             dnnResourceFrom           = 0,
@@ -69,16 +70,16 @@ def header_text():
             dnnResourceMultipleDst    = 24,
             dnnResourceNumber         = 32
         } dnnResourceType_t;
-    
+
         typedef enum {
             dnnBorderZeros          = 0x0,
             dnnBorderExtrapolation  = 0x3
         } dnnBorder_t;
-    
+
         /*******************************************************************************
          * F32 section: single precision
          ******************************************************************************/
-    
+
         dnnError_t dnnLayoutCreate_F32(
                         dnnLayout_t *pLayout, size_t dimension, const size_t size[], const size_t strides[]);
         dnnError_t dnnLayoutCreateFromPrimitive_F32(
@@ -93,7 +94,7 @@ def header_text():
                         void *ptr);
         dnnError_t dnnLayoutDelete_F32(
                         dnnLayout_t layout);
-    
+
         dnnError_t dnnPrimitiveAttributesCreate_F32(
                         dnnPrimitiveAttributes_t *attributes);
         dnnError_t dnnPrimitiveAttributesDestroy_F32(
@@ -101,7 +102,7 @@ def header_text():
         dnnError_t dnnPrimitiveGetAttributes_F32(
                         dnnPrimitive_t primitive,
                         dnnPrimitiveAttributes_t *attributes);
-    
+
         dnnError_t dnnExecute_F32(
                         dnnPrimitive_t primitive, void *resources[]);
         dnnError_t dnnExecuteAsync_F32(
@@ -110,12 +111,12 @@ def header_text():
                         dnnPrimitive_t primitive);
         dnnError_t dnnDelete_F32(
                         dnnPrimitive_t primitive);
-    
+
         dnnError_t dnnConversionCreate_F32(
                         dnnPrimitive_t* pConversion, const dnnLayout_t from, const dnnLayout_t to);
         dnnError_t dnnConversionExecute_F32(
                         dnnPrimitive_t conversion, void *from, void *to);
-    
+
         dnnError_t dnnSumCreate_F32(
                         dnnPrimitive_t *pSum, dnnPrimitiveAttributes_t attributes, const size_t nSummands,
                         dnnLayout_t layout, float *coefficients);
@@ -128,7 +129,7 @@ def header_text():
                         dnnPrimitive_t *pScale,
                         dnnPrimitiveAttributes_t attributes,
                         const dnnLayout_t dataLayout, float alpha);
-    
+
         dnnError_t dnnConvolutionCreateForward_F32(
                         dnnPrimitive_t* pConvolution,
                         dnnPrimitiveAttributes_t attributes,
@@ -158,7 +159,7 @@ def header_text():
                         dnnPrimitiveAttributes_t attributes,
                         dnnAlgorithm_t algorithm,
                         size_t dimension, const size_t dstSize[]);
-    
+
         dnnError_t dnnGroupsConvolutionCreateForward_F32(
                         dnnPrimitive_t* pConvolution,
                         dnnPrimitiveAttributes_t attributes,
@@ -188,7 +189,7 @@ def header_text():
                         dnnPrimitiveAttributes_t attributes,
                         dnnAlgorithm_t algorithm,
                         size_t groups, size_t dimension, const size_t dstSize[]);
-    
+
         dnnError_t dnnReLUCreateForward_F32(
                         dnnPrimitive_t* pRelu,
                         dnnPrimitiveAttributes_t attributes,
@@ -197,7 +198,7 @@ def header_text():
                         dnnPrimitive_t* pRelu,
                         dnnPrimitiveAttributes_t attributes,
                         const dnnLayout_t diffLayout, const dnnLayout_t dataLayout, float negativeSlope);
-    
+
         dnnError_t dnnLRNCreateForward_F32(
                         dnnPrimitive_t* pLrn,
                         dnnPrimitiveAttributes_t attributes,
@@ -206,7 +207,7 @@ def header_text():
                         dnnPrimitive_t* pLrn,
                         dnnPrimitiveAttributes_t attributes,
                         const dnnLayout_t diffLayout, const dnnLayout_t dataLayout, size_t kernel_size, float alpha, float beta, float k);
-    
+
         dnnError_t dnnBatchNormalizationCreateForward_F32(
                         dnnPrimitive_t* pBatchNormalization,
                         dnnPrimitiveAttributes_t attributes,
@@ -219,7 +220,7 @@ def header_text():
                         dnnPrimitive_t* pBatchNormalization,
                         dnnPrimitiveAttributes_t attributes,
                         const dnnLayout_t dataLayout, float eps);
-    
+
         dnnError_t dnnPoolingCreateForward_F32(
                         dnnPrimitive_t* pPooling,
                         dnnPrimitiveAttributes_t attributes,
@@ -234,7 +235,7 @@ def header_text():
                         const dnnLayout_t srcLayout,
                         const size_t kernelSize[], const size_t kernelStride[],
                         const int inputOffset[], const dnnBorder_t borderType);
-    
+
         dnnError_t dnnInnerProductCreateForward_F32(
                         dnnPrimitive_t *pInnerProduct,
                         dnnPrimitiveAttributes_t attributes,
@@ -264,11 +265,11 @@ def header_text():
                         dnnPrimitiveAttributes_t attributes,
                         size_t dimensions,
                         const size_t dstSize[]);
-    
+
         /*******************************************************************************
          * F64 section: double precision
          ******************************************************************************/
-    
+
         dnnError_t dnnLayoutCreate_F64 (
                         dnnLayout_t *pLayout, size_t dimension, const size_t size[], const size_t strides[]);
         dnnError_t dnnLayoutCreateFromPrimitive_F64(
@@ -283,7 +284,7 @@ def header_text():
                         void *ptr);
         dnnError_t dnnLayoutDelete_F64(
                         dnnLayout_t layout);
-    
+
         dnnError_t dnnPrimitiveAttributesCreate_F64(
                         dnnPrimitiveAttributes_t *attributes);
         dnnError_t dnnPrimitiveAttributesDestroy_F64(
@@ -291,7 +292,7 @@ def header_text():
         dnnError_t dnnPrimitiveGetAttributes_F64(
                         dnnPrimitive_t primitive,
                         dnnPrimitiveAttributes_t *attributes);
-    
+
         dnnError_t dnnExecute_F64(
                         dnnPrimitive_t primitive, void *resources[]);
         dnnError_t dnnExecuteAsync_F64(
@@ -300,12 +301,12 @@ def header_text():
                         dnnPrimitive_t primitive);
         dnnError_t dnnDelete_F64(
                         dnnPrimitive_t primitive);
-    
+
         dnnError_t dnnConversionCreate_F64(
                         dnnPrimitive_t* pConversion, const dnnLayout_t from, const dnnLayout_t to);
         dnnError_t dnnConversionExecute_F64(
                         dnnPrimitive_t conversion, void *from, void *to);
-    
+
         dnnError_t dnnSumCreate_F64(
                         dnnPrimitive_t *pSum, dnnPrimitiveAttributes_t attributes, const size_t nSummands,
                         dnnLayout_t layout, double *coefficients);
@@ -318,7 +319,7 @@ def header_text():
                         dnnPrimitive_t *pScale,
                         dnnPrimitiveAttributes_t attributes,
                         const dnnLayout_t dataLayout, double alpha);
-    
+
         dnnError_t dnnConvolutionCreateForward_F64(
                         dnnPrimitive_t* pConvolution,
                         dnnPrimitiveAttributes_t attributes,
@@ -348,7 +349,7 @@ def header_text():
                         dnnPrimitiveAttributes_t attributes,
                         dnnAlgorithm_t algorithm,
                         size_t dimension, const size_t dstSize[]);
-    
+
         dnnError_t dnnGroupsConvolutionCreateForward_F64(
                         dnnPrimitive_t* pConvolution,
                         dnnPrimitiveAttributes_t attributes,
@@ -378,7 +379,7 @@ def header_text():
                         dnnPrimitiveAttributes_t attributes,
                         dnnAlgorithm_t algorithm,
                         size_t groups, size_t dimension, const size_t dstSize[]);
-    
+
         dnnError_t dnnReLUCreateForward_F64(
                         dnnPrimitive_t* pRelu,
                         dnnPrimitiveAttributes_t attributes,
@@ -387,7 +388,7 @@ def header_text():
                         dnnPrimitive_t* pRelu,
                         dnnPrimitiveAttributes_t attributes,
                         const dnnLayout_t diffLayout, const dnnLayout_t dataLayout, double negativeSlope);
-    
+
         dnnError_t dnnLRNCreateForward_F64(
                         dnnPrimitive_t* pLrn,
                         dnnPrimitiveAttributes_t attributes,
@@ -396,7 +397,7 @@ def header_text():
                         dnnPrimitive_t* pLrn,
                         dnnPrimitiveAttributes_t attributes,
                         const dnnLayout_t diffLayout, const dnnLayout_t dataLayout, size_t kernel_size, double alpha, double beta, double k);
-    
+
         dnnError_t dnnBatchNormalizationCreateForward_F64(
                         dnnPrimitive_t* pBatchNormalization,
                         dnnPrimitiveAttributes_t attributes,
@@ -409,7 +410,7 @@ def header_text():
                         dnnPrimitive_t* pBatchNormalization,
                         dnnPrimitiveAttributes_t attributes,
                         const dnnLayout_t dataLayout, double eps);
-    
+
         dnnError_t dnnPoolingCreateForward_F64(
                         dnnPrimitive_t* pPooling,
                         dnnPrimitiveAttributes_t attributes,
@@ -424,7 +425,7 @@ def header_text():
                         const dnnLayout_t srcLayout,
                         const size_t kernelSize[], const size_t kernelStride[],
                         const int inputOffset[], const dnnBorder_t borderType);
-    
+
         dnnError_t dnnInnerProductCreateForward_F64(
                         dnnPrimitive_t *pInnerProduct,
                         dnnPrimitiveAttributes_t attributes,

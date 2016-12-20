@@ -2,6 +2,7 @@
 Optimizations addressing the convolution for mkl
 """
 from __future__ import absolute_import, print_function, division
+import logging
 import theano
 from theano import gof, tensor, scalar
 from theano.compile import optdb
@@ -27,6 +28,8 @@ from theano.tensor.nnet.nnet import (AbstractRelu, AbstractReluGrad)
 from theano.tensor.nnet.abstract_conv import (AbstractConv2d,
                                               AbstractConv2d_gradWeights,
                                               AbstractConv2d_gradInputs)
+
+_logger = logging.getLogger('theano.sandbox.mkl.opt')
 
 # uniq_id for all the mkl Ops, to differentiate different layer even they've same parameters.
 uniq_id = 0
@@ -427,19 +430,24 @@ def local_pool_mkl(node):
     if stride is None:
         stride = ws
 
-    x_u2i = U2IPool(ignore_border=node.op.ignore_border,
-                    mode=node.op.mode,
-                    uniq_id=uniq_id)(x, ws, stride, pad)
+    try:
+        x_u2i = U2IPool(ignore_border=node.op.ignore_border,
+                        mode=node.op.mode,
+                        uniq_id=uniq_id)(x, ws, stride, pad)
 
-    poolOut = mkl_pool.Pool(ignore_border=node.op.ignore_border,
-                            mode=node.op.mode,
-                            uniq_id=uniq_id)(x_u2i, ws, stride, pad)
+        poolOut = mkl_pool.Pool(ignore_border=node.op.ignore_border,
+                                mode=node.op.mode,
+                                uniq_id=uniq_id)(x_u2i, ws, stride, pad)
 
-    z_i2u = I2U(uniq_id=uniq_id)(poolOut)
+        z_i2u = I2U(uniq_id=uniq_id)(poolOut)
 
-    print('@@@ done with local_pool_mkl')
-    rval = z_i2u
-    return [rval]
+        rval = z_i2u
+        return [rval]
+    except Exception as e:
+        msg = ('Failed to apply local opt to Op %s. '
+               'Exception message: %s\n') % (node.op, str(e))
+        _logger.warning(msg)
+        return
 
 
 @register_opt()
@@ -472,25 +480,31 @@ def local_poolGrad_mkl(node):
     if stride is None:
         stride = ws
 
-    x_u2i = U2IPool(ignore_border=node.op.ignore_border,
-                    mode=node.op.mode,
-                    uniq_id=uniq_id)(x, ws, stride, pad)
+    try:
+        x_u2i = U2IPool(ignore_border=node.op.ignore_border,
+                        mode=node.op.mode,
+                        uniq_id=uniq_id)(x, ws, stride, pad)
 
-    poolOut = mkl_pool.Pool(ignore_border=node.op.ignore_border,
-                            mode=node.op.mode,
-                            uniq_id=uniq_id)(x_u2i, ws, stride, pad)
+        poolOut = mkl_pool.Pool(ignore_border=node.op.ignore_border,
+                                mode=node.op.mode,
+                                uniq_id=uniq_id)(x_u2i, ws, stride, pad)
 
-    gz_u2i = I2UGrad(uniq_id=uniq_id)(poolOut, gz)
+        gz_u2i = I2UGrad(uniq_id=uniq_id)(poolOut, gz)
 
-    poolGradOut = mkl_pool.PoolGrad(ignore_border=node.op.ignore_border,
-                                    mode=node.op.mode,
-                                    uniq_id=uniq_id)(x_u2i, gz_u2i, ws, stride, pad)
+        poolGradOut = mkl_pool.PoolGrad(ignore_border=node.op.ignore_border,
+                                        mode=node.op.mode,
+                                        uniq_id=uniq_id)(x_u2i, gz_u2i, ws, stride, pad)
 
-    gx_i2u = U2IGrad(uniq_id=uniq_id)(x, poolGradOut)
+        gx_i2u = U2IGrad(uniq_id=uniq_id)(x, poolGradOut)
 
-    print('@@@ done with local_poolGrad_mkl')
-    rval = gx_i2u
-    return [rval]
+        print('@@@ done with local_poolGrad_mkl')
+        rval = gx_i2u
+        return [rval]
+    except Exception as e:
+        msg = ('Failed to apply local opt to Op %s. '
+               'Exception message: %s\n') % (node.op, str(e))
+        _logger.warning(msg)
+        return
 
 
 @register_opt()
@@ -510,13 +524,19 @@ def local_relu_mkl(node):
 
     x, = node.inputs
 
-    x_u2i = U2IRelu(slope=node.op.slope, uniq_id=uniq_id)(x)
-    reluOut = mkl_relu.Relu(slope=node.op.slope, uniq_id=uniq_id)(x_u2i)
-    z_i2u = I2U(uniq_id=uniq_id)(reluOut)
+    try:
+        x_u2i = U2IRelu(slope=node.op.slope, uniq_id=uniq_id)(x)
+        reluOut = mkl_relu.Relu(slope=node.op.slope, uniq_id=uniq_id)(x_u2i)
+        z_i2u = I2U(uniq_id=uniq_id)(reluOut)
 
-    print('@@@ done with local_relu_mkl')
-    rval = z_i2u
-    return [rval]
+        print('@@@ done with local_relu_mkl')
+        rval = z_i2u
+        return [rval]
+    except Exception as e:
+        msg = ('Failed to apply local opt to Op %s. '
+               'Exception message: %s\n') % (node.op, str(e))
+        _logger.warning(msg)
+        return
 
 
 @register_opt()
@@ -536,17 +556,23 @@ def local_reluGrad_mkl(node):
 
     x, gz = node.inputs
 
-    x_u2i = U2IRelu(slope=node.op.slope, uniq_id=uniq_id)(x)
-    reluOut = mkl_relu.Relu(slope=node.op.slope, uniq_id=uniq_id)(x_u2i)
-    gz_u2i = I2UGrad(uniq_id=uniq_id)(reluOut, gz)
+    try:
+        x_u2i = U2IRelu(slope=node.op.slope, uniq_id=uniq_id)(x)
+        reluOut = mkl_relu.Relu(slope=node.op.slope, uniq_id=uniq_id)(x_u2i)
+        gz_u2i = I2UGrad(uniq_id=uniq_id)(reluOut, gz)
 
-    reluGradOut = mkl_relu.ReluGrad(slope=node.op.slope, uniq_id=uniq_id)(x_u2i, gz_u2i)
+        reluGradOut = mkl_relu.ReluGrad(slope=node.op.slope, uniq_id=uniq_id)(x_u2i, gz_u2i)
 
-    gx_i2u = U2IGrad(uniq_id=uniq_id)(x, reluGradOut)
+        gx_i2u = U2IGrad(uniq_id=uniq_id)(x, reluGradOut)
 
-    print('@@@ done with local_reluGrad_mkl')
-    rval = gx_i2u
-    return [rval]
+        print('@@@ done with local_reluGrad_mkl')
+        rval = gx_i2u
+        return [rval]
+    except Exception as e:
+        msg = ('Failed to apply local opt to Op %s. '
+               'Exception message: %s\n') % (node.op, str(e))
+        _logger.warning(msg)
+        return
 
 
 @register_opt()
