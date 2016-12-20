@@ -9,11 +9,12 @@ from theano.tensor.blas import ldflags
 from theano.gof.cmodule import Compiler
 from theano.sandbox.mkl import mkl_helper
 
-# Patric:
-from theano.compile import optdb
 from theano.gof import EquilibriumDB, SequenceDB
 
-# Init OPT for mkl
+_logger_name = 'theano.sandbox.mkl'
+_logger = logging.getLogger(_logger_name)
+
+
 mkl_optimizer = EquilibriumDB(ignore_newtrees=False)
 mkl_seqopt = SequenceDB()
 
@@ -29,10 +30,6 @@ def register_opt(*tags, **kwargs):
                                'mkl', *tags, **kwargs)
         return local_opt
     return f
-
-
-_logger_name = 'theano.sandbox.mkl'
-_logger = logging.getLogger(_logger_name)
 
 
 class MKLVersion(gof.Op):
@@ -89,7 +86,7 @@ def mkl_available():
 
     if config.dnn.enabled == "False":
         mkl_available.avail = False
-        mkl_available.msg = "MKL is disabled by the 'dnn.enable' setting."
+        mkl_available.msg = "MKL is disabled by the 'dnn.enabled' setting."
         return mkl_available.avail
 
     if config.dnn.enabled == "cudnn":
@@ -98,6 +95,7 @@ def mkl_available():
             config.dnn.enabled = "auto"
             print ('WARNING: when device is cpu, config.dnn.enabled=cudnn is not supported, '
                    'Swithch to "auto" flag.')
+            # FIXME call python warning module
         else:
             mkl_available.avail = False
             mkl_available.msg = "Disabled by dnn.enabled flag"
@@ -129,7 +127,7 @@ def mkl_available():
                 try_run=False, output=True, compiler=theano.config.cxx, comp_args=False)
 
             mkl_available.avail = comp
-            if not mkl_available.avail:
+            if mkl_available.avail is False:
                 mkl_available.msg = (
                     "Can not compile with MKL. We got this error:\n" +
                     str(err))
@@ -166,4 +164,4 @@ mkl_available.msg = None
 # register name of 'mkl_opt' in opt.py and then add tags for it.
 if mkl_available():
     from . import opt
-    optdb.add_tags('mkl_opt', 'fast_compile', 'fast_run')
+    opt.optdb.add_tags('mkl_opt', 'fast_compile', 'fast_run')

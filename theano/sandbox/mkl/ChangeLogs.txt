@@ -1,3 +1,12 @@
+Date: 2016/12/20
+Author: Ciyong
+Changes:
+----------------------------------
+1. Add regression test for mkl module
+2. Add retry for pool and relu opt
+3. Remove useless codes
+
+
 Date: 2016/12/16
 Author: lvtao
 Changes:
