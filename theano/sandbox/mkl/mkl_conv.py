@@ -3,21 +3,17 @@ contains an op for convolving input images with a set of weights by using MKL
 library, which is a free dnn library provided by Intel.
 """
 from __future__ import absolute_import, print_function, division
-# import logging
-# from six import integer_types
-
 import theano
 from theano import Apply
 from theano import gof
 from theano.tensor import as_tensor_variable, TensorType
 from theano.tensor.nnet.abstract_conv import get_conv_output_shape
-# from theano.tensor.blas import ldflags, blas_header_version
 from theano.tensor.blas import ldflags
 from theano.sandbox.mkl import mkl_helper
 
 
 class MKLConvBase(gof.Op):
-    __props__ = ('imshp', 'kshp', 'border_mode', 'subsample', 'uniq_id')
+    __props__ = ('imshp', 'kshp', 'border_mode', 'subsample')
 
     def __init__(self, imshp=None, kshp=None, border_mode="valid", subsample=(1, 1), uniq_id=0):
         if (not theano.config.blas.ldflags) or ('mkl' not in theano.config.blas.ldflags):
@@ -50,29 +46,6 @@ class MKLConvBase(gof.Op):
         self.imshp = imshp
         self.kshp = kshp
         self.uniq_id = uniq_id
-
-    def __eq__(self, other):
-        if hasattr(self, '__props__'):
-            if type(self) != type(other):
-                return False
-            else:
-                self_props = [getattr(self, p) for p in self.__props__ if p != 'uniq_id']
-                other_props = [getattr(other, p) for p in other.__props__ if p != 'uniq_id']
-                if self_props == other_props:
-                    return True
-                else:
-                    return False
-        else:
-            return NotImplemented
-
-    def __hash__(self):
-        return hash(self.imshp) ^ hash(self. kshp) ^ hash(self.border_mode) ^ hash(self.subsample)
-
-    def __str__(self):
-        if hasattr(self, '__props__'):
-            return '%s{%s}' % (self.__class__.__name__, ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
-        else:
-            return '%s' % (self.__class__.__name__)
 
     def c_libraries(self):
         return ldflags()
@@ -134,6 +107,8 @@ class MKLConvBase(gof.Op):
             static size_t weightStrides[dimension+1] = {0};
             static size_t topSize[dimension] = {0}; //w, h, c, n
             static size_t topStrides[dimension] = {0};
+            static size_t biasSize[1] = {0}; //w, h, c, n
+            static size_t biasStrides[1] = {0};
             static size_t groups = 1;
             static size_t fdimension = 0;
 
@@ -147,22 +122,30 @@ class MKLConvBase(gof.Op):
             static int convPadding[2] = {0};
 
             static void *conv_res[dnnResourceNumber] = {0};
+            static void *conv_res_bias[dnnResourceNumber] = {0};
 
             static void *bottom_buffer_ptr = NULL;
             static void *bottom_buffer_ptr_from_previous = NULL;
             static void *bottom_buffer_ptr_to_previous = NULL;
-            static void *weight_buffer_ptr = NULL;
+
             static void *top_buffer_ptr = NULL;
-            static void *topgrad_buffer_ptr = NULL;
+
+            static void *weight_buffer_ptr = NULL;
+            static void *weight_buffer_tmp_ptr = NULL;
 
             static void *bwdf2fwd_weight_buffer_ptr = NULL;
-            static void *weight_buffer_tmp_ptr = NULL;
+            static void *bias_buffer_ptr = NULL;
+            static void *bias_buffer_tmp_ptr = NULL;
+
+            static void *topgrad_buffer_ptr = NULL;
             static void *topgrad_buffer_ptr_for_weight = NULL;
+            static void *topgrad_buffer_ptr_for_bias = NULL;
 
             static dnnError_t err;
             static dnnPrimitive_t pConvolutionFwd = NULL;
             static dnnPrimitive_t pConvolutionBwdData = NULL;
             static dnnPrimitive_t pConvolutionBwdFilter = NULL;
+            static dnnPrimitive_t pConvolutionBwdBias = NULL;
 
             static dnnPrimitive_t bwdf_convert_weight_to_fwd_int = NULL;
             static dnnPrimitive_t bwdf_convert_wegith_to_usr = NULL;
@@ -181,6 +164,9 @@ class MKLConvBase(gof.Op):
             static dnnLayout_t topgrad_int_layout_for_weight = NULL;
             static dnnLayout_t fwd_weight_int_layout = NULL;
 
+            static dnnLayout_t bias_int_layout = NULL;
+            static dnnLayout_t bias_usr_layout = NULL;
+
             static dnnPrimitive_t convert_bottom_to_int = NULL;
             static dnnPrimitive_t convert_weight_to_int = NULL;
             static dnnPrimitive_t convert_top_to_int = NULL;
@@ -189,11 +175,17 @@ class MKLConvBase(gof.Op):
             static dnnPrimitive_t convert_bottom_from_int = NULL;
             static dnnPrimitive_t convert_int2int_bottom = NULL;
             static dnnPrimitive_t convert_int2int_topgrad_for_weight = NULL;
+            static dnnLayout_t topgrad_int_layout_for_bias = NULL;
+            static dnnPrimitive_t convert_int2int_topgrad_for_bias = NULL;
+            static dnnPrimitive_t convert_bias_to_int = NULL;
+            static dnnPrimitive_t convert_bias_from_int = NULL;
         """ % sub
         return ccode
 
 
 class Conv2D(MKLConvBase):
+    __props__ = ('imshp', 'kshp', 'border_mode', 'subsample', 'filter_flip', 'filter_dilation')
+
     def __init__(self, imshp=None, kshp=None, border_mode='valid', subsample=(1, 1), filter_flip=False, filter_dilation=(1, 1), uniq_id=0):
         super(Conv2D, self).__init__(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample, uniq_id=uniq_id)
         self.filter_flip = filter_flip
@@ -223,9 +215,10 @@ class Conv2D(MKLConvBase):
         """ % locals()
         return ccode
 
-    def make_node(self, img, kern):
+    def make_node(self, img, kern, bias=None):
         img = as_tensor_variable(img)
         kern = as_tensor_variable(kern)
+
         if img.type.ndim != 4:
             raise TypeError('img must be 4D tensor')
         if kern.type.ndim not in [4, 5]:
@@ -234,7 +227,13 @@ class Conv2D(MKLConvBase):
         broadcastable = [img.type.broadcastable[0], kern.type.broadcastable[0],
                          False, False]
         dtype = img.type.dtype
-        return Apply(self, [img, kern], [TensorType(dtype, broadcastable)()])
+
+        if bias is not None:
+            bias = as_tensor_variable(bias)
+            inputs = [img, kern, bias]
+        else:
+            inputs = [img, kern]
+        return Apply(self, inputs, [TensorType(dtype, broadcastable)()])
 
     def infer_shape(self, node, input_shape):
         imshp = input_shape[0]
@@ -244,15 +243,20 @@ class Conv2D(MKLConvBase):
             kshp = [gkshp[1] * gkshp[0], gkshp[2] * gkshp[0], gkshp[3], gkshp[4]]
         else:
             kshp = [gkshp[0], gkshp[1], gkshp[2], gkshp[3]]
-        res = get_conv_output_shape(
-            imshp,
-            kshp,
-            self.border_mode,
-            self.subsample)
+
+        res = get_conv_output_shape(imshp,
+                                    kshp,
+                                    self.border_mode,
+                                    self.subsample)
         return [res]
 
     def c_code(self, node, name, inp, out_, sub):
-        bottom, weight, = inp
+        if len(inp) > 2:
+            bottom, weight, bias = inp
+        else:
+            bottom, weight = inp
+            bias = None
+
         top, = out_
 
         if self.imshp is None:
@@ -293,6 +297,14 @@ class Conv2D(MKLConvBase):
         sub['bottom'] = bottom
         sub['weight'] = weight
         sub['top'] = top
+        sub['bias'] = bias
+
+        if bias is not None:
+            withBias = 1
+            sub['bias'] = bias
+        else:
+            withBias = 0
+        sub['withBias'] = withBias
 
         if node.inputs[0].dtype == "float32":
             sub['precision'] = 'F32'
@@ -303,9 +315,12 @@ class Conv2D(MKLConvBase):
 
         sub.update(locals())
 
+        if bias is None:
+            sub['bias'] = 'NULL'
+
         ccode = """
             #if __DEBUG__
-                std::cout << "conv forward, c_code start" << std::endl;
+            std::cout << "conv forward, c_code start" << std::endl;
             #endif
             if (NULL == pConvolutionFwd) {
                 convStrides[0] = %(dW)s;
@@ -342,13 +357,25 @@ class Conv2D(MKLConvBase):
                 topStrides[2] = topSize[0] * topSize[1];
                 topStrides[3] = topSize[0] * topSize[1] * topSize[2];
 
+                //printf("Bias = :", %(withBias)s);
+                if(%(withBias)s) {
+                    biasSize[0] = %(o_c)s;
+                    biasStrides[0] = 1;
+                }
+
                 groups = %(grp)s;
                 fdimension = dimension + (groups != 1);
 
                 // Create conv forward primitive
-                CHECK_ERR( dnnGroupsConvolutionCreateForward_%(precision)s(&pConvolutionFwd, NULL,
-                           dnnAlgorithmConvolutionDirect, groups, dimension, bottomSize,
-                           topSize, weightSize, convStrides, convPadding, dnnBorderZeros), err );
+                if (%(withBias)s) {
+                    CHECK_ERR( dnnGroupsConvolutionCreateForwardBias_%(precision)s(&pConvolutionFwd, NULL,
+                               dnnAlgorithmConvolutionDirect, groups, dimension, bottomSize,
+                               topSize, weightSize, convStrides, convPadding, dnnBorderZeros), err );
+                } else {
+                    CHECK_ERR( dnnGroupsConvolutionCreateForward_%(precision)s(&pConvolutionFwd, NULL,
+                               dnnAlgorithmConvolutionDirect, groups, dimension, bottomSize,
+                               topSize, weightSize, convStrides, convPadding, dnnBorderZeros), err );
+                }
             }
 
             if (NULL == weight_usr_layout) {
@@ -367,24 +394,28 @@ class Conv2D(MKLConvBase):
                            pConvolutionFwd, dnnResourceDst), err );
             }
 
+            if (%(withBias)s && NULL == bias_usr_layout) {
+                CHECK_ERR( dnnLayoutCreate_%(precision)s(&bias_usr_layout, 1, biasSize, biasStrides), err );
+            }
+
             // Prepare top array, only create once for passing internal layout and
             // internal data buffer for top data.
             if ( !(%(top)s && PyArray_NDIM(%(top)s) == 4)) {
-               npy_intp out_dim[4];
-               out_dim[0] = topSize[3];
-               out_dim[1] = topSize[2];
-               out_dim[2] = topSize[1];
-               out_dim[3] = topSize[0];
-               %(top)s = (PyArrayObject*)PyArray_ZEROS(dimension,
+                npy_intp out_dim[4];
+                out_dim[0] = topSize[3];
+                out_dim[1] = topSize[2];
+                out_dim[2] = topSize[1];
+                out_dim[3] = topSize[0];
+                %(top)s = (PyArrayObject*)PyArray_ZEROS(dimension,
                                                         out_dim,
                                                         PyArray_TYPE(%(bottom)s),
                                                         0);
-               if (NULL == %(top)s) {
-                   PyErr_Format(PyExc_RuntimeError,
+                if (NULL == %(top)s) {
+                    PyErr_Format(PyExc_RuntimeError,
                                 "Conv2D: Failed to allocate top of %%lld x %%lld x %%lld x %%lld",
                                 (long long)out_dim[0], (long long)out_dim[1], (long long)out_dim[2], (long long)out_dim[3]);
-                   %(fail)s
-               }
+                    %(fail)s
+                }
             }
 
             #if __DEBUG__
@@ -428,14 +459,26 @@ class Conv2D(MKLConvBase):
             #endif
 
             weight_buffer_ptr = (%(dtype)s*)PyArray_DATA(%(weight)s);
+            if(%(withBias)s) {
+                bias_buffer_ptr = (%(dtype)s*)PyArray_DATA(%(bias)s);
+            }
 
+            //#ifndef MKL_CONV_TEST
             if (1 == first_run) {
                 if (!dnnLayoutCompare_%(precision)s(weight_usr_layout, weight_int_layout)) {
                     if (NULL == convert_weight_to_int) {
                         CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_weight_to_int, weight_usr_layout, weight_int_layout), err );
                     }
+
+                    if (%(withBias)s && !dnnLayoutCompare_%(precision)s(bias_usr_layout, bias_int_layout)) {
+                        if (NULL == convert_bias_to_int) {
+                        CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_bias_to_int, bias_usr_layout, bias_int_layout), err );
+                        }
+                    }
+
                 }
             }
+            //#endif
 
             #if __SUPPORT_USER_PARAMS__
                 if (convert_weight_to_int) {
@@ -448,6 +491,15 @@ class Conv2D(MKLConvBase):
                     conv_res[dnnResourceFilter] = weight_buffer_ptr;
                 }
 
+                if (%(withBias)s && convert_bias_to_int) {
+                    if (NULL == bias_buffer_tmp_ptr) {
+                        CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&bias_buffer_tmp_ptr, bias_int_layout), err );
+                    }
+                    CHECK_ERR( dnnConversionExecute_%(precision)s(convert_bias_to_int,bias_buffer_ptr, bias_buffer_tmp_ptr), err );
+                    conv_res[dnnResourceBias] = bias_buffer_tmp_ptr;
+                } else {
+                    conv_res[dnnResourceBias] = bias_buffer_ptr;
+                }
             #else //__SUPPORT_USER_PARAMS__
                 if (1 == first_run) {
                     if (convert_weight_to_int) {
@@ -458,7 +510,17 @@ class Conv2D(MKLConvBase):
                         memcpy(weight_buffer_ptr, weight_buffer_tmp_ptr, dnnLayoutGetMemorySize_%(precision)s(weight_int_layout));
                     }
                 }
-                conv_res[dnnResourceFilter] = weight_buffer_ptr;
+
+                if (%(withBias)s && convert_bias_to_int) {
+                    if (NULL == bias_buffer_tmp_ptr) {
+                        CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&bias_buffer_tmp_ptr, bias_int_layout), err );
+                    }
+                    CHECK_ERR( dnnConversionExecute_%(precision)s(convert_bias_to_int, bias_buffer_ptr, bias_buffer_tmp_ptr), err );
+                    memcpy(bias_buffer_ptr, bias_buffer_tmp_ptr, dnnLayoutGetMemorySize_%(precision)s(bias_int_layout));
+               }
+
+               conv_res[dnnResourceFilter] = weight_buffer_ptr;
+               if(%(withBias)s) conv_res[dnnResourceBias] = bias_buffer_ptr;
             #endif //__SUPPORT_USER_PARAMS__
 
             //Allocate internal buffer for top data, only apply once
@@ -471,12 +533,14 @@ class Conv2D(MKLConvBase):
                 bottom_size = dnnLayoutGetMemorySize_%(precision)s(*bottom_int_layout_ptr);
                 weight_size = dnnLayoutGetMemorySize_%(precision)s(weight_int_layout);
                 top_size = dnnLayoutGetMemorySize_%(precision)s(top_int_layout);
+                bias_size = dnnLayoutGetMemorySize_%(precision)s(bias_int_layout);
                 std::cout << "forward, pConvolution = @" << pConvolutionFwd << std::endl;
                 std::cout<<"bottom size: "<<bottomSize[3]<<" x "<<bottomSize[2]<<" x "<<bottomSize[1]<<" x "<<bottomSize[0]<<", acutal size: "<<bottom_size<<std::endl;
                 std::cout<<"bottom buffer ptr: "<<bottom_buffer_ptr<<std::endl;
                 std::cout<<"weight size: "<<weightSize[3]<<" x "<<weightSize[2]<<" x "<<weightSize[1]<<" x "<<weightSize[0]<<", actual size: "<<weight_size<<std::endl;
                 std::cout<<"weight buffer ptr: "<<weight_buffer_ptr<<std::endl;
                 std::cout<<"top size: "<<topSize[3]<<" x "<<topSize[2]<<" x "<<topSize[1]<<" x "<<topSize[0]<<", actual size: "<<top_size<<std::endl;
+                std::cout << "bias_size = " << bias_size << std::endl;
                 std::cout<<"top buffer ptr: "<<top_buffer_ptr<<std::endl;
                 std::cout << "forward, pConvolution = @" << pConvolutionFwd << std::endl;
                 std::cout << "forward, conv_res[Src] = @" << conv_res[dnnResourceSrc] << std::endl;
@@ -498,26 +562,44 @@ class Conv2D(MKLConvBase):
                 std::cout <<"conv forward, top_buffer_ptr: @" <<top_buffer_ptr<<std::endl;
                 std::cout << "forward, c_code end\\n" << std::endl;
             #endif
+
+            #ifdef MKL_CONV_TEST
+               // TODO
+            #endif
         """ % sub
         return ccode
 
     def grad(self, inp, grads):
-        bottom, weights = inp
+        if len(inp) > 2:
+            bottom, weights, bias = inp
+        else:
+            bottom, weights = inp
+            bias = None
+
         top, = grads
-        d_image = ConvGradInput(border_mode=self.border_mode,
+        d_images = ConvGradInputs(border_mode=self.border_mode,
+                                  subsample=self.subsample,
+                                  imshp=self.imshp,
+                                  kshp=self.kshp)(bottom, weights, top)
+
+        dlist = ConvGradWeights(border_mode=self.border_mode,
                                 subsample=self.subsample,
                                 imshp=self.imshp,
-                                kshp=self.kshp)(bottom, weights, top)
-        d_weights = ConvGradWeight(border_mode=self.border_mode,
-                                   subsample=self.subsample,
-                                   imshp=self.imshp,
-                                   kshp=self.kshp)(bottom, weights, top)
-        return d_image, d_weights
+                                kshp=self.kshp)(bottom, weights, top, bias)
+
+        if len(dlist) > 1:
+            d_weights, d_bias = dlist
+            return d_images, d_weights, d_bias
+        else:
+            d_weights = dlist
+            return d_images, d_weights
 
 
-class ConvGradInput(MKLConvBase):
-    def __init__(self, imshp=None, kshp=None, border_mode='valid', subsample=(1, 1), filter_flip=False, filter_dilation=(1, 1), uniq_id=0):
-        super(ConvGradInput, self).__init__(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample, uniq_id=uniq_id)
+class ConvGradInputs(MKLConvBase):
+    __props__ = ('imshp', 'kshp', 'border_mode', 'subsample', 'filter_flip', 'filter_dilation')
+
+    def __init__(self, imshp=None, kshp=None, border_mode='valid', subsample=(1, 1), filter_flip=True, filter_dilation=(1, 1), uniq_id=0):
+        super(ConvGradInputs, self).__init__(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample, uniq_id=uniq_id)
         self.filter_flip = filter_flip
         self.filter_dilation = filter_dilation
 
@@ -558,17 +640,6 @@ class ConvGradInput(MKLConvBase):
                          False, False]
         dtype = kern.type.dtype
         return Apply(self, [image, kern, topgrad], [TensorType(dtype, broadcastable)()])
-
-    def infer_shape(self, node, input_shape):
-        imshp = input_shape[0]
-        gkshp = input_shape[1]
-
-        if len(gkshp) == 5:
-            kshp = [gkshp[1] * gkshp[0], gkshp[2] * gkshp[0], gkshp[3], gkshp[4]]
-        else:
-            kshp = [gkshp[0], gkshp[1], gkshp[2], gkshp[3]]
-        res = get_conv_output_shape(imshp, kshp, self.border_mode, self.subsample)
-        return [res]
 
     def c_code(self, node, name, inp, out_, sub):
         bottom, weights, topgrad = inp
@@ -686,9 +757,9 @@ class ConvGradInput(MKLConvBase):
 
             if (NULL == pConvolutionFwd) {
                 // Create conv forward primitive
-                CHECK_ERR( dnnGroupsConvolutionCreateForward_%(precision)s(&pConvolutionFwd, NULL,
-                           dnnAlgorithmConvolutionDirect, groups, dimension, bottomSize,
-                           topSize, weightSize, convStrides, convPadding, dnnBorderZeros), err );
+                    CHECK_ERR( dnnGroupsConvolutionCreateForward_%(precision)s(&pConvolutionFwd, NULL,
+                               dnnAlgorithmConvolutionDirect, groups, dimension, bottomSize,
+                               topSize, weightSize, convStrides, convPadding, dnnBorderZeros), err );
             }
             if(NULL == fwd_weight_int_layout) {
                 CHECK_ERR(dnnLayoutCreateFromPrimitive_%(precision)s(&fwd_weight_int_layout,
@@ -724,13 +795,13 @@ class ConvGradInput(MKLConvBase):
                    CHECK_ERR( dnnLayoutCreate_%(precision)s(&weight_usr_layout, fdimension, weightSize, weightStrides), err );
                }
 
-               if (1 == first_run) {
+               /*if (1 == first_run) {
                    if (!dnnLayoutCompare_%(precision)s(weight_usr_layout, weight_int_layout)) {
                        if(NULL == convert_weight_to_int) {
                            CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_weight_to_int, weight_usr_layout, weight_int_layout), err );
                        }
                    }
-               }
+               }*/
 
                if (convert_weight_to_int) {
                    if(NULL == weight_buffer_tmp_ptr) {
@@ -806,42 +877,19 @@ class ConvGradInput(MKLConvBase):
         return ccode
 
 
-class ConvGradWeight(MKLConvBase):
+class ConvGradWeights(MKLConvBase):
+    __props__ = ('imshp', 'kshp', 'border_mode', 'subsample', 'filter_flip', 'filter_dilation')
+
     def __init__(self, imshp=None, kshp=None, border_mode='valid', subsample=(1, 1), filter_flip=False, filter_dilation=(1, 1), uniq_id=0):
-        super(ConvGradWeight, self).__init__(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample, uniq_id=uniq_id)
+        super(ConvGradWeights, self).__init__(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample, uniq_id=uniq_id)
         self.filter_flip = filter_flip
         self.filter_dilation = filter_dilation
 
-    def c_cleanup_code_struct(self, node, name):
-        if node.inputs[0].type.dtype == "float32":
-            precision = "F32"
-        elif node.inputs[0].type.dtype == "float64":
-            precision = "F64"
-        uniq = self.uniq_id
-        ccode = """
-            //std::cout << "in gradW c_cleanup_code_struct " << std::endl;
-            //FIXME, remove below sentence if it's handled by conversion Op
-            //dnnDelete_%(precision)s(convert_bottom_to_int);
-            //dnnDelete_%(precision)s(convert_weight_to_int);
-            //dnnDelete_%(precision)s(convert_top_to_int);
-            //dnnDelete_%(precision)s(convert_top_from_int);
-            //dnnDelete_%(precision)s(convert_weight_from_int);
-            //dnnDelete_%(precision)s(convert_bottom_from_int);
-            //dnnLayoutDelete_%(precision)s(bottom_usr_layout);
-            //dnnLayoutDelete_%(precision)s(weight_usr_layout);
-            //dnnLayoutDelete_%(precision)s(top_usr_layout);
-            //dnnLayoutDelete_%(precision)s(bottom_int_layout);
-            //dnnLayoutDelete_%(precision)s(weight_int_layout);
-            //dnnLayoutDelete_%(precision)s(top_int_layout);
-            //END
-            // conv_%(uniq)s
-        """ % locals()
-        return ccode
-
-    def make_node(self, image, weight, topgrad):
+    def make_node(self, image, weight, topgrad, bias=None):
         image = as_tensor_variable(image)
         weight = as_tensor_variable(weight)
         topgrad = as_tensor_variable(topgrad)
+
         if image.type.ndim != 4:
             raise TypeError('image must be 4D tensor')
         if weight.type.ndim not in [4, 5]:
@@ -849,14 +897,24 @@ class ConvGradWeight(MKLConvBase):
         if topgrad.type.ndim != 4:
             raise TypeError('topgrad must be 4D tensor')
 
-        broadcastable = [topgrad.type.broadcastable[1], image.type.broadcastable[1],
-                         False, False]
-        dtype = image.type.dtype
-        return Apply(self, [image, weight, topgrad], [TensorType(dtype, broadcastable)()])
+        if bias is not None:
+            bias = as_tensor_variable(bias)
+            inputs = [image, weight, topgrad, bias]
+            outputs = [weight.type(), bias.type()]
+        else:
+            inputs = [image, weight, topgrad]
+            outputs = [weight.type()]
+
+        return Apply(self, inputs, outputs)
 
     def c_code(self, node, name, inp, out_, sub):
-        bottom, weight, topgrad = inp
-        weightgrad, = out_
+        if len(inp) > 3:
+            bottom, weight, topgrad, bias = inp
+            weightgrad, biasgrad = out_
+        else:
+            bottom, weight, topgrad = inp
+            bias = None
+            weightgrad, = out_
 
         if self.imshp is None:
             imshp = node.inputs[0].shape
@@ -878,6 +936,14 @@ class ConvGradWeight(MKLConvBase):
             grp = 1
             tshp = [kshp[0], kshp[1], kshp[2], kshp[3]]
             assert in_c == k_c
+
+        if bias is not None:
+            sub['bias'] = bias
+            sub['biasgrad'] = biasgrad
+            withBias = 1
+        else:
+            withBias = 0
+        sub['withBias'] = withBias
 
         outshp = get_conv_output_shape(imshp, tshp, self.border_mode, self.subsample)
 
@@ -907,6 +973,10 @@ class ConvGradWeight(MKLConvBase):
             sub['precision'] = 'F64'
             sub['dtype'] = 'double'
         sub.update(locals())
+
+        if bias is None:
+            sub['bias'] = 'NULL'
+            sub['biasgrad'] = 'NULL'
 
         ccode = """
             ////bwdfilter related
@@ -944,6 +1014,11 @@ class ConvGradWeight(MKLConvBase):
                 topStrides[2] = topSize[0] * topSize[1];
                 topStrides[3] = topSize[0] * topSize[1] * topSize[2];
 
+                if( %(withBias)s ) {
+                    biasSize[0] = %(o_c)s;
+                    biasStrides[0] = 1;
+                }
+
                 groups = %(grp)s;
                 fdimension = dimension + (groups != 1);
 
@@ -969,14 +1044,36 @@ class ConvGradWeight(MKLConvBase):
 
             // create forward primitive here to get forward internal layout
             if (NULL == pConvolutionFwd) {
-                CHECK_ERR( dnnGroupsConvolutionCreateForward_%(precision)s(&pConvolutionFwd, NULL,
-                           dnnAlgorithmConvolutionDirect, groups, dimension, bottomSize,
-                           topSize, weightSize, convStrides, convPadding, dnnBorderZeros), err );
+                if ( %(withBias)s ) {
+                    CHECK_ERR( dnnGroupsConvolutionCreateForwardBias_%(precision)s(&pConvolutionFwd, NULL,
+                               dnnAlgorithmConvolutionDirect, groups, dimension, bottomSize,
+                               topSize, weightSize, convStrides, convPadding, dnnBorderZeros), err );
+                } else {
+                    CHECK_ERR( dnnGroupsConvolutionCreateForward_%(precision)s(&pConvolutionFwd, NULL,
+                               dnnAlgorithmConvolutionDirect, groups, dimension, bottomSize,
+                               topSize, weightSize, convStrides, convPadding, dnnBorderZeros), err );
+                }
             }
 
             if (NULL == fwd_weight_int_layout) {
                 CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&fwd_weight_int_layout,
                            pConvolutionFwd, dnnResourceFilter), err );
+            }
+
+            //bwdbias related
+            if( %(withBias)s ) {
+                if (NULL == pConvolutionBwdBias) {
+                    CHECK_ERR ( dnnGroupsConvolutionCreateBackwardBias_%(precision)s(&pConvolutionBwdBias, NULL,
+                                dnnAlgorithmConvolutionDirect, groups, dimension, topSize), err );
+                }
+                if (NULL == bias_int_layout) {
+                    CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&bias_int_layout,
+                               pConvolutionBwdBias, dnnResourceDiffBias), err );
+                }
+                if (NULL == topgrad_int_layout_for_bias) {
+                    CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&topgrad_int_layout_for_bias,
+                               pConvolutionBwdBias, dnnResourceDiffDst), err );
+                }
             }
 
             //// Prepare weightgrad array
@@ -986,15 +1083,37 @@ class ConvGradWeight(MKLConvBase):
                                                                PyArray_TYPE(%(weight)s),
                                                                0);
                 if (NULL == %(weightgrad)s) {
+                    /*
                     PyErr_Format(PyExc_RuntimeError,
                             "conv_gradWeight: Failed to allocate weight of %%lld x %%lld x %%lld x %%lld x %%lld",
                             (long long)(PyArray_DIMS(%(weight)s))[0], (long long)(PyArray_DIMS(%(weight)s))[1],
                             (long long)(PyArray_DIMS(%(weight)s))[2], (long long)(PyArray_DIMS(%(weight)s))[3]);
+                    */
                 }
             }
 
             weight_buffer_ptr = (%(dtype)s*)PyArray_DATA(%(weightgrad)s);
+            """ % sub
 
+        if bias is not None:
+            if biasgrad is not None:
+                ccode += """
+                %(biasgrad)s = (PyArrayObject*)PyArray_ZEROS(PyArray_NDIM(%(bias)s),
+                                                             PyArray_DIMS(%(bias)s),
+                                                             PyArray_TYPE(%(bias)s),
+                                                             0);
+                if (NULL == %(biasgrad)s) {
+                    PyErr_Format(PyExc_RuntimeError, "conv_backward: Failed to allocate bias of %%lld",
+                                (long long)PyArray_NDIM(%(bias)s));
+                    %(fail)s
+                }
+                """ % sub
+
+            ccode += """
+                bias_buffer_ptr = (%(dtype)s*)PyArray_DATA(%(biasgrad)s);
+                """ % sub
+
+        ccode += """
             // get internal layout for input from previous Op
             bottom_int_layout_from_previous = ((dnnLayout_t*)PyArray_DATA(%(bottom)s))[0];
             // get internal buffer for input from previous op
@@ -1049,6 +1168,27 @@ class ConvGradWeight(MKLConvBase):
             conv_res[dnnResourceSrc] = bottom_buffer_ptr;
             conv_res[dnnResourceDiffDst] = topgrad_buffer_ptr_for_weight;
 
+            if (%(withBias)s) {
+                if (1 == first_run) {
+                    if (!dnnLayoutCompare_%(precision)s(topgrad_int_layout, topgrad_int_layout_for_bias)) {
+                        #if __DEBUG__
+                            std::cout<<"############gradWeight, topgrad layout is not equal for bias" <<std::endl;
+                        #endif
+                        if (NULL == convert_int2int_topgrad_for_bias) {
+                            CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_int2int_topgrad_for_bias, topgrad_int_layout, topgrad_int_layout_for_bias), err );
+                        }
+                    }
+                }
+                if (convert_int2int_topgrad_for_bias) {
+                    if (NULL == topgrad_buffer_ptr_for_bias) {
+                        CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&topgrad_buffer_ptr_for_bias, topgrad_int_layout_for_bias), err );
+                    }
+                    CHECK_ERR( dnnConversionExecute_%(precision)s(convert_int2int_topgrad_for_bias, topgrad_buffer_ptr, topgrad_buffer_ptr_for_bias), err );
+                } else {
+                    topgrad_buffer_ptr_for_bias = topgrad_buffer_ptr;
+                }
+            }
+
             //Allocate internal buffer for weightgrad data
             if (NULL == weight_buffer_tmp_ptr) {
                 CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&weight_buffer_tmp_ptr, bwdf_weight_int_layout), err );
@@ -1057,6 +1197,14 @@ class ConvGradWeight(MKLConvBase):
 
             //Execute convolution gradweight pass
             CHECK_ERR( dnnExecute_%(precision)s(pConvolutionBwdFilter, (void**)conv_res), err );
+
+            if (%(withBias)s) {
+                conv_res_bias[dnnResourceDiffDst] = topgrad_buffer_ptr_for_bias;
+                conv_res_bias[dnnResourceDiffBias] = bias_buffer_ptr;
+
+                //Execute convolution gradbias pass
+                CHECK_ERR( dnnExecute_%(precision)s(pConvolutionBwdBias, (void**)conv_res_bias), err );
+            }
 
             //weight bwd -> fwd cvt
             if(!dnnLayoutCompare_%(precision)s(bwdf_weight_int_layout, fwd_weight_int_layout)) {
@@ -1074,6 +1222,10 @@ class ConvGradWeight(MKLConvBase):
                     //printf(\"gradweight, weightstride: %%d, %%d, %%d, %%d\\n\", weightStrides[0], weightStrides[1], weightStrides[2], weightStrides[3]);
                 }
 
+                if(%(withBias)s && NULL == bias_usr_layout) {
+                    dnnLayoutCreate_%(precision)s(&bias_usr_layout, 1, biasSize, biasStrides);
+                }
+
                 if (bwdf_convert_weight_to_fwd_int) {
                     if (NULL == bwdf2fwd_weight_buffer_ptr) {
                         CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&bwdf2fwd_weight_buffer_ptr, fwd_weight_int_layout), err );
@@ -1087,6 +1239,18 @@ class ConvGradWeight(MKLConvBase):
                     CHECK_ERR( dnnConversionCreate_%(precision)s(&bwdf_convert_wegith_to_usr, fwd_weight_int_layout, weight_usr_layout), err );
                 }
                 dnnConversionExecute_%(precision)s(bwdf_convert_wegith_to_usr, bwdf2fwd_weight_buffer_ptr, weight_buffer_ptr);
+
+                //no need to do conversion for bias
+                if (%(withBias)s) {
+                    if(NULL == bias_buffer_tmp_ptr) {
+                        dnnAllocateBuffer_%(precision)s((void**)&bias_buffer_tmp_ptr, bias_usr_layout);
+                    }
+                    if(NULL == convert_bias_from_int) {
+                         dnnConversionCreate_%(precision)s(&convert_bias_from_int, bias_int_layout, bias_usr_layout);
+                    }
+                    dnnConversionExecute_%(precision)s(convert_bias_from_int, bias_buffer_ptr, bias_buffer_tmp_ptr);
+                    memcpy(bias_buffer_ptr, bias_buffer_tmp_ptr, dnnLayoutGetMemorySize_%(precision)s(bias_usr_layout));
+                }
             #else
                 if (bwdf_convert_weight_to_fwd_int) {
                     if (NULL == bwdf2fwd_weight_buffer_ptr) {

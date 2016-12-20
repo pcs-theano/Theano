@@ -1050,96 +1050,316 @@ class U2IConv(MKLOp):
                             node.inputs[0].type.dtype)
         fail = sub['fail']
 
-	ccode = """
-           int convPadding[2];
-           size_t convStrides[2], weightSize[4], weightStrides[5], topSize[4], topStrides[5];
-           convStrides[0] = %(dW)s;
-           convStrides[1] = %(dH)s;
-           convPadding[0] = -%(padW)s;
-           convPadding[1] = -%(padH)s;
+        ccode = """
+            int convPadding[2];
+            size_t convStrides[2], weightSize[4], weightStrides[5], topSize[4], topStrides[5];
+            convStrides[0] = %(dW)s;
+            convStrides[1] = %(dH)s;
+            convPadding[0] = -%(padW)s;
+            convPadding[1] = -%(padH)s;
 
-           bottomSize[0] = %(i_w)s;  //w
-           bottomSize[1] = %(i_h)s;  //h
-           bottomSize[2] = %(i_c)s;  //c
-           bottomSize[3] = %(i_n)s;  //n
-           bottomStride[0] = 1;
-           bottomStride[1] = bottomSize[0];
-           bottomStride[2] = bottomSize[0] * bottomSize[1];
-           bottomStride[3] = bottomSize[0] * bottomSize[1] * bottomSize[2];
+            bottomSize[0] = %(i_w)s;  //w
+            bottomSize[1] = %(i_h)s;  //h
+            bottomSize[2] = %(i_c)s;  //c
+            bottomSize[3] = %(i_n)s;  //n
+            bottomStride[0] = 1;
+            bottomStride[1] = bottomSize[0];
+            bottomStride[2] = bottomSize[0] * bottomSize[1];
+            bottomStride[3] = bottomSize[0] * bottomSize[1] * bottomSize[2];
 
-           weightSize[0] = %(k_w)s;
-           weightSize[1] = %(k_h)s;
-           weightSize[2] = %(k_c)s;
-           weightSize[3] = %(k_n)s;
-           weightStrides[0] = 1;
-           weightStrides[1] = weightSize[0];
-           weightStrides[2] = weightSize[0] * weightSize[1];
-           weightStrides[3] = weightSize[0] * weightSize[1] * weightSize[2];
-           weightStrides[4] = weightSize[0] * weightSize[1] * weightSize[2] * weightSize[3];
+            weightSize[0] = %(k_w)s;
+            weightSize[1] = %(k_h)s;
+            weightSize[2] = %(k_c)s;
+            weightSize[3] = %(k_n)s;
+            weightStrides[0] = 1;
+            weightStrides[1] = weightSize[0];
+            weightStrides[2] = weightSize[0] * weightSize[1];
+            weightStrides[3] = weightSize[0] * weightSize[1] * weightSize[2];
+            weightStrides[4] = weightSize[0] * weightSize[1] * weightSize[2] * weightSize[3];
 
-           topSize[0] = %(o_w)s;
-           topSize[1] = %(o_h)s;
-           topSize[2] = %(o_c)s;
-           topSize[3] = %(o_n)s;
-           topStrides[0] = 1;
-           topStrides[1] = topSize[0];
-           topStrides[2] = topSize[0] * topSize[1];
-           topStrides[3] = topSize[0] * topSize[1] * topSize[2];
-           topStrides[4] = topSize[0] * topSize[1] * topSize[2] * topSize[3];
+            topSize[0] = %(o_w)s;
+            topSize[1] = %(o_h)s;
+            topSize[2] = %(o_c)s;
+            topSize[3] = %(o_n)s;
+            topStrides[0] = 1;
+            topStrides[1] = topSize[0];
+            topStrides[2] = topSize[0] * topSize[1];
+            topStrides[3] = topSize[0] * topSize[1] * topSize[2];
+            topStrides[4] = topSize[0] * topSize[1] * topSize[2] * topSize[3];
 
-           const int group = %(grp)s;
-           //create user layout
-           CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_usr, DIMENSION, bottomSize, bottomStride), err );
-           CHECK_ERR( dnnGroupsConvolutionCreateForward_%(precision)s(&primitive, NULL, dnnAlgorithmConvolutionDirect, group, DIMENSION, bottomSize, topSize, weightSize, convStrides, convPadding, dnnBorderZeros), err );
-           CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_int, primitive, dnnResourceSrc), err );
+            const int group = %(grp)s;
+            //create user layout
+            CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_usr, DIMENSION, bottomSize, bottomStride), err );
+            CHECK_ERR( dnnGroupsConvolutionCreateForward_%(precision)s(&primitive, NULL, dnnAlgorithmConvolutionDirect, group, DIMENSION, bottomSize, topSize, weightSize, convStrides, convPadding, dnnBorderZeros), err );
+            CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_int, primitive, dnnResourceSrc), err );
 
-           if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_int))
-           {
-               if (NULL == convert_to_int)
-               {
-                   CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_to_int, layout_usr, layout_int), err );
-               }
-           }
+            if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_int))
+            {
+                if (NULL == convert_to_int)
+                {
+                    CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_to_int, layout_usr, layout_int), err );
+                }
+            }
 
-           if (NULL == %(z)s)
-           {
-               //Create PyArrayObject for output
-               %(z)s = (PyArrayObject*)PyArray_ZEROS(DIMENSION, PyArray_DIMS(%(x)s), PyArray_TYPE(%(x)s), 0);
+            if (NULL == %(z)s)
+            {
+                //Create PyArrayObject for output
+                %(z)s = (PyArrayObject*)PyArray_ZEROS(DIMENSION, PyArray_DIMS(%(x)s), PyArray_TYPE(%(x)s), 0);
 
-               if (NULL == %(z)s)
-               {
-                   %(fail)s
-               }
+                if (NULL == %(z)s)
+                {
+                    %(fail)s
+                }
+            }
 
-           }
+            if (NULL == internal_ptr)
+            {
+                CHECK_ERR(  dnnAllocateBuffer_%(precision)s((void**)&internal_ptr, layout_int), err );
+            }
 
-          if (NULL == internal_ptr)
-          {
-              CHECK_ERR(  dnnAllocateBuffer_%(precision)s((void**)&internal_ptr, layout_int), err );
-          }
+            if (convert_to_int)
+            {
+                convert_resources[dnnResourceFrom] = (PyArray_DATA(%(x)s));
+                convert_resources[dnnResourceTo] = (void*)(internal_ptr);
+                CHECK_ERR( dnnExecute_%(precision)s(convert_to_int, convert_resources), err );
+            }
+            else
+            {
+                internal_ptr = (PyArray_DATA(%(x)s));
+            }
 
-          if (convert_to_int)
-          {
-              convert_resources[dnnResourceFrom] = (PyArray_DATA(%(x)s));
-              convert_resources[dnnResourceTo] = (void*)(internal_ptr);
-              CHECK_ERR( dnnExecute_%(precision)s(convert_to_int, convert_resources), err );
-          }
-          else
-          {
-              internal_ptr = (PyArray_DATA(%(x)s));
-          }
+            if (layout_int != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
+            {
+                ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_int;
+            }
+            if (internal_ptr != ((void**)PyArray_DATA(%(z)s))[1])
+            {
+                ((void**)PyArray_DATA(%(z)s))[1] = internal_ptr;
+            }
 
-          if (layout_int != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
-          {
-              ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_int;
-          }
-          if (internal_ptr != ((void**)PyArray_DATA(%(z)s))[1])
-          {
-              ((void**)PyArray_DATA(%(z)s))[1] = internal_ptr;
-          }
+            #ifdef __DEBUG__
+            printf(\"U2I_Conv: from_buffer %%x to_buffer %%x\\n\", convert_resources[dnnResouceFrom], convert_resources[dnnResourceTo]);
+            #endif
+        """ % locals()
+        return ccode
 
-          #ifdef __DEBUG__
-          printf(\"U2I_Conv: from_buffer %%x to_buffer %%x\\n\", convert_resources[dnnResouceFrom], convert_resources[dnnResourceTo]);
-          #endif
+
+class U2IElemwiseSum(MKLOp):
+    __props__ = ('inp_num', 'coeff')
+
+    def __init__(self, inp_num=1, coeff=[1.0, ], uniq_id=0):
+        super(U2IElemwiseSum, self).__init__(uniq_id)
+        self.coeff = coeff
+        self.inp_num = inp_num
+        assert isinstance(self.coeff, list)
+        if self.inp_num != len(self.coeff):
+            raise ValueError('Number of ElemwiseSum inputs is not equal to number of coefficients.')
+
+    def __hash__(self):
+        return hash(type(self)) ^ hash(self.inp_num) ^ hash(sum(self.coeff))
+
+    def make_node(self, x):
+        if x.ndim != 4:
+            raise TypeError('U2IElemwiseSum inputs should be 4-dim tensor')
+        x = T.as_tensor_variable(x)
+        return Apply(self, [x], [x.type()])
+
+    def grad(self, inp, grads):
+        x, = inp
+        gz, = grads
+        return [U2IGrad(uniq_id=self.uniq_id)(x, gz)]
+
+    def c_code(self, node, name, inp, out, sub):
+        x, = inp
+        z, = out
+        coeff = self.coeff
+        inp_num = self.inp_num
+
+        if 'float32' == node.inputs[0].type.dtype:
+            sub['type'] = 'float'
+            precision = 'F32'
+        elif 'float64' == node.inputs[0].type.dtype:
+            sub['type'] = 'double'
+            precision = 'F64'
+        else:
+            raise Exception('Type %s is not supported!' % node.inputs[0].type.dtype)
+
+        fail = sub['fail']
+
+        sub['L'] = inp_num
+
+        ccode = """
+            %(type)s coeffs[%(L)s] = {1.0};
+        """ % sub
+
+        for i, co in enumerate(coeff):
+            ccode = ccode + """
+            coeffs[%s] = %s;
+            """ % (i, co)
+
+        ccode = ccode + """
+            if (1 == first_run) {
+                bottomSize[0] = PyArray_DIMS(%(x)s)[3]; //w
+                bottomSize[1] = PyArray_DIMS(%(x)s)[2]; //h
+                bottomSize[2] = PyArray_DIMS(%(x)s)[1]; //c
+                bottomSize[3] = PyArray_DIMS(%(x)s)[0]; //n
+
+                bottomStride[0] = 1;
+                bottomStride[1] = bottomStride[0] * bottomSize[0];
+                bottomStride[2] = bottomStride[1] * bottomSize[1];
+                bottomStride[3] = bottomStride[2] * bottomSize[2];
+
+                //create user layout
+                CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_usr, DIMENSION, bottomSize, bottomStride), err );
+                CHECK_ERR( dnnSumCreate_%(precision)s(&primitive, NULL, %(inp_num)s, layout_usr, coeffs), err);
+                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_int, primitive, dnnResourceMultipleSrc), err );
+
+                if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_int))
+                {
+                    if (NULL == convert_to_int)
+                    {
+                        CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_to_int, layout_usr, layout_int), err );
+                    }
+                }
+            }
+
+            if (NULL == %(z)s)
+            {
+                //Create PyArrayObject for output
+                %(z)s = (PyArrayObject*)PyArray_ZEROS(DIMENSION, PyArray_DIMS(%(x)s), PyArray_TYPE(%(x)s), 0);
+                if (NULL == %(z)s)
+                {
+                    %(fail)s
+                }
+
+                if (NULL == internal_ptr)
+                {
+                    CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&internal_ptr, layout_int), err );
+                }
+            }
+
+            if (convert_to_int)
+            {
+                convert_resources[dnnResourceFrom] = (PyArray_DATA(%(x)s));
+                convert_resources[dnnResourceTo] = (void*)(internal_ptr);
+                CHECK_ERR( dnnExecute_%(precision)s(convert_to_int, convert_resources), err );
+            }
+            else
+            {
+                internal_ptr = (PyArray_DATA(%(x)s));
+            }
+            if (layout_int != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
+            {
+                ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_int;
+            }
+            if (internal_ptr != ((void**)PyArray_DATA(%(z)s))[1])
+            {
+                ((void**)PyArray_DATA(%(z)s))[1] = internal_ptr;
+            }
+
+            first_run = 0;
+            #ifdef __DEBUG__
+                printf(\"U2IElemwiseSum: From buffer %%x to buffer %%x\\n\", convert_resources[dnnResouceFrom], convert_resources[dnnResourceTo]);
+            #endif
+        """ % locals()
+        return ccode
+
+
+class U2IBatchNormalization(MKLOp):
+    __props__ = ('eps',)
+
+    def __init__(self, eps=1.0, uniq_id=0):
+        self.uniq_id = uniq_id
+        self.eps = eps
+
+    def make_node(self, x):
+        x = T.as_tensor_variable(x)
+        return Apply(self, [x], [x.type()])
+
+    def grad(self, inp, grads):
+        x, = inp
+        gz, = grads
+        return [U2IGrad(uniq_id=self.uniq_id)(x, gz)]
+
+    def c_code(self, node, name, inp, out, sub):
+        x, = inp
+        z, = out
+        eps = self.eps
+
+        if 'float32' == node.inputs[0].type.dtype:
+            precision = 'F32'
+        elif 'float64' == node.inputs[0].type.dtype:
+            precision = 'F64'
+        else:
+            raise Exception('Type %s is not supported!' % node.inputs[0].type.dtype)
+
+        fail = sub['fail']
+
+        ccode = """
+            if (1 == first_run) {
+                bottomSize[0] = PyArray_DIMS(%(x)s)[3]; //w
+                bottomSize[1] = PyArray_DIMS(%(x)s)[2]; //h
+                bottomSize[2] = PyArray_DIMS(%(x)s)[1]; //c
+                bottomSize[3] = PyArray_DIMS(%(x)s)[0]; //n
+
+                bottomStride[0] = 1;
+                bottomStride[1] = bottomStride[0] * bottomSize[0];
+                bottomStride[2] = bottomStride[1] * bottomSize[1];
+                bottomStride[3] = bottomStride[2] * bottomSize[2];
+
+                //create user layout
+                CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_usr, DIMENSION, bottomSize, bottomStride), err );
+                CHECK_ERR( dnnBatchNormalizationCreateForward_%(precision)s(&primitive, NULL, layout_usr, %(eps)s), err);
+                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_int, primitive, dnnResourceSrc), err );
+
+                if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_int))
+                {
+                    if (NULL == convert_to_int)
+                    {
+                        CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_to_int, layout_usr, layout_int), err );
+                    }
+                }
+            }
+
+            if (NULL == %(z)s)
+            {
+                //Create PyArrayObject for output
+                %(z)s = (PyArrayObject*)PyArray_ZEROS(DIMENSION, PyArray_DIMS(%(x)s), PyArray_TYPE(%(x)s), 0);
+
+                if (NULL == %(z)s)
+                {
+                    %(fail)s
+                }
+
+                if (NULL == internal_ptr)
+                {
+                    CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&internal_ptr, layout_int), err );
+                }
+            }
+
+            if (convert_to_int)
+            {
+                convert_resources[dnnResourceFrom] = (PyArray_DATA(%(x)s));
+                convert_resources[dnnResourceTo] = (void*)(internal_ptr);
+                CHECK_ERR( dnnExecute_%(precision)s(convert_to_int, convert_resources), err );
+            }
+            else
+            {
+                internal_ptr = (PyArray_DATA(%(x)s));
+            }
+            if (layout_int != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
+            {
+                ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_int;
+            }
+            if (internal_ptr != ((void**)PyArray_DATA(%(z)s))[1])
+            {
+                ((void**)PyArray_DATA(%(z)s))[1] = internal_ptr;
+            }
+
+            first_run = 0;
+
+            #ifdef __DEBUG__
+                printf(\"U2IBatchNormalization: From buffer %%x to buffer %%x\\n\", convert_resources[dnnResouceFrom], convert_resources[dnnResourceTo]);
+            #endif
         """ % locals()
         return ccode

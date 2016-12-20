@@ -8,13 +8,14 @@ from theano.compile.ops import Shape_i
 import theano.sandbox.mkl as mkl
 from theano.tensor import TensorConstant, Alloc
 from theano.tensor.signal import pool
-
+from theano.sandbox.mkl import mkl_elemwise, basic_ops
 from theano.sandbox.mkl.basic_ops import (U2IGrad,
                                           I2U,
                                           I2UGrad,
                                           U2IPool,
                                           U2IRelu,
-                                          U2ILRN
+                                          U2ILRN,
+                                          U2IElemwiseSum
                                           )
 
 from theano.tensor.nnet.lrn import lrn
@@ -460,6 +461,51 @@ def test_mkl_3_relu_backward():
     print('test_mkl_3_relu_backward() pass..')
 
 
+def test_mkl_elemwise_sum_forward():
+    x = tensor.ftensor4('x')
+    y1 = tensor.nnet.relu(x)
+    y2 = pool.pool_2d(y1, (1, 1),  True, mode='max')
+    z = tensor.nnet.relu(y1)
+    out = y2 + z
+
+    f = theano.function(inputs=[x], outputs=out, mode=mode_with_mkl)
+    topo = f.maker.fgraph.toposort()
+    # inputs = f.maker.fgraph.inputs
+    # outputs = f.maker.fgraph.outputs
+    assert len(topo) == 10
+    assert isinstance(topo[6].op, basic_ops.U2IElemwiseSum)
+    assert isinstance(topo[7].op, basic_ops.U2IElemwiseSum)
+    assert isinstance(topo[8].op, mkl_elemwise.ElemwiseSum)
+    assert isinstance(topo[9].op, basic_ops.I2U)
+    
+    imval = numpy.random.rand(4, 2 ,4, 4).astype(numpy.float32)
+    f(imval)
+    print('test_mkl_elemwise_sum_forward() pass..')
+
+
+def test_mkl_elemwise_sum_backward():
+    x = tensor.ftensor4('x')
+    y1 = tensor.nnet.relu(x)
+    y2 = pool.pool_2d(y1, (1, 1),  True, mode='max')
+    z = tensor.nnet.relu(y1)
+    out = y2 + z
+    reluSum = tensor.sum(out)
+    reluBackward = tensor.grad(reluSum, [x])
+    f = theano.function(inputs=[x], outputs=reluBackward, mode=mode_with_mkl)
+    topo = f.maker.fgraph.toposort()
+    inputs = f.maker.fgraph.inputs
+    outputs = f.maker.fgraph.outputs
+    
+    assert len(topo) == 29
+    assert isinstance(topo[22].op, basic_ops.U2IElemwiseSum)
+    assert isinstance(topo[23].op, basic_ops.U2IElemwiseSum)
+    assert isinstance(topo[24].op, mkl_elemwise.ElemwiseSum)
+
+    imval = numpy.random.rand(4, 2, 4, 4).astype(numpy.float32)
+    f(imval)
+    print('test_mkl_elemwise_sum_backward() pass..')
+
+
 if __name__ == '__main__':
     theano.config.floatX = 'float32'
     if mkl.mkl_available():
@@ -474,5 +520,7 @@ if __name__ == '__main__':
         # test_mkl_opt_with_wrong_dim()
         test_mkl_3_relu_forward()
         test_mkl_3_relu_backward()
+        test_mkl_elemwise_sum_forward()
+        test_mkl_elemwise_sum_backward()
     else:
         print('Optional package MKL disabled')

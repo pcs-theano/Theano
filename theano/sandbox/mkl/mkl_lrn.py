@@ -77,39 +77,15 @@ class LRN(basic_ops.MKLOp):
     beta :
     n    : indicates how many nearby maps to use for normalization.
     """
-    __props__ = ('uniq_id', 'alpha', 'beta', 'k', 'size')
+    __props__ = ('alpha', 'beta', 'k', 'size')
 
-    def __init__(self, uniq_id=0, alpha=1e-4, beta=0.75, k=2, n=5):
+    def __init__(self, alpha=1e-4, beta=0.75, k=2, n=5, uniq_id=0):
         self.alpha = alpha
         self.beta = beta
         self.size = n
         self.k = k
         self.uniq_id = uniq_id
         self.fp = 'p_lrn' + str(uniq_id)
-
-    def __eq__(self, other):
-        if hasattr(self, '__props__'):
-            if type(self) != type(other):
-                return False
-            else:
-                self_props = [getattr(self, p) for p in self.__props__ if p != 'uniq_id']
-                other_props = [getattr(other, p) for p in other.__props__ if p != 'uniq_id']
-                if self_props == other_props:
-                    return True
-                else:
-                    return False
-        else:
-            return NotImplemented
-
-    def __hash__(self):
-        return (hash(self.alpha) ^ hash(self.beta) ^ hash(self.k) ^ hash(self.size))
-
-    def __str__(self):
-        if hasattr(self, '__props__'):
-            return '%s{%s}' % (self.__class__.__name__,
-                               ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
-        else:
-            return '%s' % (self.__class__.__name__)
 
     def make_node(self, x):
         if x.type.ndim != 4:
@@ -323,39 +299,15 @@ class LRNGrad(basic_ops.MKLOp):
     n    : indicates how many nearby maps to use for normalization.
 
     """
-    __props__ = ('uniq_id', 'alpha', 'beta', 'k', 'size')
+    __props__ = ('alpha', 'beta', 'k', 'size')
 
-    def __init__(self, uniq_id=0, alpha=1e-4, beta=0.75, k=2, n=5, fp='default.txt'):
+    def __init__(self, alpha=1e-4, beta=0.75, k=2, n=5, fp='default.txt', uniq_id=0):
         self.alpha = alpha
         self.beta = beta
         self.k = k
         self.size = n
         self.uniq_id = uniq_id
         self.fp = fp
-
-    def __eq__(self, other):
-        if hasattr(self, '__props__'):
-            if type(self) != type(other):
-                return False
-            else:
-                self_props = [getattr(self, p) for p in self.__props__ if p != 'uniq_id']
-                other_props = [getattr(other, p) for p in other.__props__ if p != 'uniq_id']
-                if self_props == other_props:
-                    return True
-                else:
-                    return False
-        else:
-            return NotImplemented
-
-    def __hash__(self):
-        return (hash(self.alpha) ^ hash(self.beta) ^ hash(self.k) ^ hash(self.size))
-
-    def __str__(self):
-        if hasattr(self, '__props__'):
-            return '%s{%s}' % (self.__class__.__name__,
-                               ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
-        else:
-            return '%s' % (self.__class__.__name__)
 
     def c_headers(self):
         return ['<math.h>', '<fstream>']  # FIXME

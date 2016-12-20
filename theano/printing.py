@@ -672,6 +672,7 @@ default_colorCodes = {'GpuFromHost': 'red',
                       'U2IGrad': '#FF8000',
                       'I2U': '#FF8000',
                       'I2UGrad': '#FF8000',
+                      'I2UElemwiseSum': '#FF8000'
                       }
 
 
