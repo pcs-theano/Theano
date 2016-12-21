@@ -1,3 +1,15 @@
+Date: 2016/12/21
+Author: lvtao
+Changes:
+----------------------------------
+1. Update basic_ops.py, mkl_bn.py, opt.py to support Batch Normalization OP.
+2. Add test_bn.py for BN OP unit test.
+3. Update tensor/nnet/bn.py to choose BN OP of MKLDNN or orginal BN
+implementation.
+4. Fix bugs in LRN and LRNGrad OP's c_code function. Init the workspace
+pointer everytime, not just first run.
+
+
 Date: 2016/12/20
 Author: lvtao
 Changes:

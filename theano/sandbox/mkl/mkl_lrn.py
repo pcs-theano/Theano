@@ -178,9 +178,8 @@ class LRN(basic_ops.MKLOp):
             #if __DEBUG__
             std::cout<<"lrn fwd start\\n";
             #endif
+            ((void **)PyArray_DATA(%(x)s))[2] = (void *)bp;
             if(first_run){
-                ((void **)PyArray_DATA(%(x)s))[2] = (void *)bp;
-
                 typenum = PyArray_ObjectType((PyObject*)%(x)s, 0);
                 x_bs = PyArray_DIMS(%(x)s)[0];
                 x_channels = PyArray_DIMS(%(x)s)[1];
@@ -395,9 +394,8 @@ class LRNGrad(basic_ops.MKLOp):
             #if __DEBUG__
             std::cout<<"lrn bwd start\\n";
             #endif
+            ip = ((void**)PyArray_DATA(%(x)s))[2];
             if(first_run){
-                ip = ((void**)PyArray_DATA(%(x)s))[2];
-
                 //std::cout<<"LRN Bwd init "<<std::endl;
                 typenum = PyArray_ObjectType((PyObject*)%(x)s, 0);
                 x_bs = PyArray_DIMS(%(x)s)[0];

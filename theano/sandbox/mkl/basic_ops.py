@@ -1252,12 +1252,14 @@ class U2IElemwiseSum(MKLOp):
 class U2IBatchNormalization(MKLOp):
     __props__ = ('eps',)
 
-    def __init__(self, eps=1.0, uniq_id=0):
+    def __init__(self, eps=1e-5, uniq_id=0):
         self.uniq_id = uniq_id
         self.eps = eps
 
     def make_node(self, x):
         x = T.as_tensor_variable(x)
+        if x.ndim != 4:
+            raise TypeError('The input should be a 4-dim tensor.')
         return Apply(self, [x], [x.type()])
 
     def grad(self, inp, grads):
