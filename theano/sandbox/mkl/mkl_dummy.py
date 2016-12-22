@@ -26,4 +26,5 @@ class dummyOP(gof.Op):
         z = theano.tensor.nnet.sigmoid(x)
         outputs[0] = z
 
+
 dummy_op = dummyOP()

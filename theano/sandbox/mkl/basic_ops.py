@@ -989,9 +989,10 @@ class U2IConv(MKLOp):
         else:
             return '%s' % (self.__class__.__name__)
 
-    def make_node(self, x):
+    def make_node(self, x, ws):
         x = T.as_tensor_variable(x)
-        return Apply(self, [x], [x.type()])
+        ws = T.as_tensor_variable(ws)
+        return Apply(self, [x, ws], [x.type()])
 
     def grad(self, inp, grads):
         x, = inp
@@ -999,13 +1000,24 @@ class U2IConv(MKLOp):
         return [U2IGrad(uniq_id=self.uniq_id)(x, gz)]
 
     def c_code(self, node, name, inp, out, sub):
-        x, = inp
+        x, ws = inp
         dH, dW = self.subsample
 
-        grp = 1
+        if self.imshp is None:
+            self.imshp = x.shape
+
+        if self.kshp is None:
+            self.kshp = ws.shape
 
         i_n, i_c, i_h, i_w = self.imshp
-        k_n, k_c, k_h, k_w = self.kshp
+
+        if len(self.kshp) == 5:
+            grp, k_n, k_c, k_h, k_w = self.kshp
+            assert i_c == k_c * grp
+        else:
+            k_n, k_c, k_h, k_w = self.kshp
+            grp = 1
+
         o_n, o_c, o_h, o_w = get_conv_output_shape(image_shape=self.imshp,
                                                    kernel_shape=self.kshp,
                                                    border_mode=self.border_mode,
@@ -1035,46 +1047,52 @@ class U2IConv(MKLOp):
         fail = sub['fail']
 
         ccode = """
-            int convPadding[2];
-            size_t convStrides[2], weightSize[4], weightStrides[5], topSize[4], topStrides[5];
-            convStrides[0] = %(dW)s;
-            convStrides[1] = %(dH)s;
-            convPadding[0] = -%(padW)s;
-            convPadding[1] = -%(padH)s;
+            if (1 == first_run) {
+                int convPadding[2];
+                size_t convStrides[2], weightSize[4], weightStrides[5], topSize[4], topStrides[5];
+                convStrides[0] = %(dW)s;
+                convStrides[1] = %(dH)s;
+                convPadding[0] = -%(padW)s;
+                convPadding[1] = -%(padH)s;
 
-            bottomSize[0] = %(i_w)s;  //w
-            bottomSize[1] = %(i_h)s;  //h
-            bottomSize[2] = %(i_c)s;  //c
-            bottomSize[3] = %(i_n)s;  //n
-            bottomStride[0] = 1;
-            bottomStride[1] = bottomSize[0];
-            bottomStride[2] = bottomSize[0] * bottomSize[1];
-            bottomStride[3] = bottomSize[0] * bottomSize[1] * bottomSize[2];
+                bottomSize[0] = %(i_w)s;  //w
+                bottomSize[1] = %(i_h)s;  //h
+                bottomSize[2] = %(i_c)s;  //c
+                bottomSize[3] = %(i_n)s;  //n
+                bottomStride[0] = 1;
+                bottomStride[1] = bottomSize[0];
+                bottomStride[2] = bottomSize[0] * bottomSize[1];
+                bottomStride[3] = bottomSize[0] * bottomSize[1] * bottomSize[2];
 
-            weightSize[0] = %(k_w)s;
-            weightSize[1] = %(k_h)s;
-            weightSize[2] = %(k_c)s;
-            weightSize[3] = %(k_n)s;
-            weightStrides[0] = 1;
-            weightStrides[1] = weightSize[0];
-            weightStrides[2] = weightSize[0] * weightSize[1];
-            weightStrides[3] = weightSize[0] * weightSize[1] * weightSize[2];
+                weightSize[0] = %(k_w)s;
+                weightSize[1] = %(k_h)s;
+                weightSize[2] = %(k_c)s;
+                weightSize[3] = %(k_n)s;
+                weightSize[4] = %(grp)s;
+                weightStrides[0] = 1;
+                weightStrides[1] = weightSize[0];
+                weightStrides[2] = weightSize[0] * weightSize[1];
+                weightStrides[3] = weightSize[0] * weightSize[1] * weightSize[2];
+                weightStrides[4] = weightSize[0] * weightSize[1] * weightSize[2] * weightSize[3];
 
-            topSize[0] = %(o_w)s;
-            topSize[1] = %(o_h)s;
-            topSize[2] = %(o_c)s;
-            topSize[3] = %(o_n)s;
-            topStrides[0] = 1;
-            topStrides[1] = topSize[0];
-            topStrides[2] = topSize[0] * topSize[1];
-            topStrides[3] = topSize[0] * topSize[1] * topSize[2];
-            topStrides[4] = topSize[0] * topSize[1] * topSize[2] * topSize[3];
+                topSize[0] = %(o_w)s;
+                topSize[1] = %(o_h)s;
+                topSize[2] = %(o_c)s;
+                topSize[3] = %(o_n)s;
+                topStrides[0] = 1;
+                topStrides[1] = topSize[0];
+                topStrides[2] = topSize[0] * topSize[1];
+                topStrides[3] = topSize[0] * topSize[1] * topSize[2];
+                topStrides[4] = topSize[0] * topSize[1] * topSize[2] * topSize[3];
 
-            const int group = %(grp)s;
-            //create user layout
-            CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_usr, DIMENSION, bottomSize, bottomStride), err );
-            CHECK_ERR( dnnGroupsConvolutionCreateForward_%(precision)s(&primitive, NULL, dnnAlgorithmConvolutionDirect, group, DIMENSION, bottomSize, topSize, weightSize, convStrides, convPadding, dnnBorderZeros), err );
-            CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_internal, primitive, dnnResourceSrc), err );
+                const int group = %(grp)s;
+                //create user layout
+                CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_usr, DIMENSION, bottomSize, bottomStride), err );
+                CHECK_ERR( dnnGroupsConvolutionCreateForward_%(precision)s(&primitive, NULL,
+                           dnnAlgorithmConvolutionDirect, group, DIMENSION, bottomSize, topSize,
+                           weightSize, convStrides, convPadding, dnnBorderZeros), err );
+                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_internal, primitive, dnnResourceSrc), err );
+            }
 
             if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_internal))
             {
@@ -1119,6 +1137,7 @@ class U2IConv(MKLOp):
             {
                 ((void**)PyArray_DATA(%(z)s))[1] = internal_ptr;
             }
+            first_run = 0;
 
             #ifdef _MKL_DEBUG_
             printf(\"U2I_Conv: from_buffer %%x to_buffer %%x\\n\", convert_resources[dnnResouceFrom], convert_resources[dnnResourceTo]);
@@ -1142,9 +1161,9 @@ class U2IElemwiseSum(MKLOp):
         return hash(type(self)) ^ hash(self.inp_num) ^ hash(sum(self.coeff))
 
     def make_node(self, x):
+        x = T.as_tensor_variable(x)
         if x.ndim != 4:
             raise TypeError('U2IElemwiseSum inputs should be 4-dim tensor')
-        x = T.as_tensor_variable(x)
         return Apply(self, [x], [x.type()])
 
     def grad(self, inp, grads):

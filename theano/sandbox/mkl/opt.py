@@ -170,7 +170,7 @@ class ReplaceConvBias(Optimizer):
                                 try:
                                     uniq_id += 1
                                     inp_0 = U2IConv(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample,
-                                                    filter_dilation=filter_dilation, uniq_id=uniq_id)(inp[0])
+                                                    filter_dilation=filter_dilation, uniq_id=uniq_id)(inp[0], inp[1])
                                     uniq_id += 1
                                     out_0 = mkl_conv.Conv2D(imshp=imshp,
                                                             kshp=kshp,
@@ -189,7 +189,7 @@ class ReplaceConvBias(Optimizer):
                                 try:
                                     uniq_id += 1
                                     inp_0 = U2IConv(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample,
-                                                    filter_dilation=filter_dilation, uniq_id=uniq_id)(inp[0])
+                                                    filter_dilation=filter_dilation, uniq_id=uniq_id)(inp[0], inp[1])
                                     uniq_id += 1
                                     out_0 = mkl_conv.Conv2D(imshp=imshp,
                                                             kshp=kshp,
@@ -229,7 +229,7 @@ class ReplaceConvBias(Optimizer):
                                     try:
                                         uniq_id += 1
                                         inp_0 = U2IConv(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample,
-                                                        filter_dilation=filter_dilation, uniq_id=uniq_id)(inp[0])
+                                                        filter_dilation=filter_dilation, uniq_id=uniq_id)(inp[0], inp[1])
 
                                         uniq_id += 1
                                         conv_fw = mkl_conv.Conv2D(imshp=imshp,
@@ -298,7 +298,7 @@ class ReplaceConvBias(Optimizer):
                         try:
                             uniq_id += 1
                             inp_0 = U2IConv(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample,
-                                            filter_dilation=filter_dilation, uniq_id=uniq_id)(x)
+                                            filter_dilation=filter_dilation, uniq_id=uniq_id)(x, inp[0])
 
                             uniq_id += 1
                             conv_fw = mkl_conv.Conv2D(imshp=imshp,
@@ -673,7 +673,7 @@ def local_Conv2D_mkl(node):
                              kshp=node.op.kshp,
                              subsample=node.op.subsample,
                              filter_dilation=node.op.filter_dilation,
-                             uniq_id=uniq_id)(x)
+                             uniq_id=uniq_id)(x, ws)
         convOut = mkl_conv.Conv2D(imshp=node.op.imshp,
                                   kshp=node.op.kshp,
                                   border_mode=node.op.border_mode,
@@ -715,7 +715,7 @@ def local_ConvGradInputs_mkl(node):
                              kshp=node.op.kshp,
                              subsample=node.op.subsample,
                              filter_dilation=node.op.filter_dilation,
-                             uniq_id=uniq_id)(x)
+                             uniq_id=uniq_id)(x, ws)
         convOut = mkl_conv.Conv2D(imshp=node.op.imshp,
                                   kshp=node.op.kshp,
                                   border_mode=node.op.border_mode,
@@ -762,7 +762,7 @@ def local_ConvGradWeights_mkl(node):
                              kshp=node.op.kshp,
                              subsample=node.op.subsample,
                              filter_dilation=node.op.filter_dilation,
-                             uniq_id=uniq_id)(x)
+                             uniq_id=uniq_id)(x, ws)
         convOut = mkl_conv.Conv2D(imshp=node.op.imshp,
                                   kshp=node.op.kshp,
                                   border_mode=node.op.border_mode,
@@ -801,7 +801,6 @@ conv_groupopt.register('local_ConvGradWeights_mkl', local_ConvGradWeights_mkl, 2
 @register_opt()
 @local_optimizer([mkl_bn.AbstractBatchNormalization])
 def local_bn_mkl(node):
-    print('@@local_bn_mkl')
     global uniq_id
     uniq_id += 1
 
@@ -815,13 +814,11 @@ def local_bn_mkl(node):
     x_u2i = U2IBatchNormalization(eps=node.op.eps,
                                   uniq_id=uniq_id)(x)
 
-    uniq_id += 1
     bn_out = mkl_bn.BatchNormalization(eps=node.op.eps,
                                        bias=node.op.bias,
                                        term=node.op.term,
                                        uniq_id=uniq_id)(x_u2i, scale, shift)
 
-    uniq_id += 1
     z_i2u = I2U(uniq_id=uniq_id)(bn_out)
     rval = z_i2u
     return [rval]
@@ -830,7 +827,6 @@ def local_bn_mkl(node):
 @register_opt()
 @local_optimizer([mkl_bn.AbstractBatchNormalizationGrad])
 def local_bnGrad_mkl(node):
-    print('@@local_bnGrad_mkl')
     global uniq_id
     uniq_id += 1
 
@@ -844,7 +840,6 @@ def local_bnGrad_mkl(node):
     x_u2i = U2IBatchNormalization(eps=node.op.eps,
                                   uniq_id=uniq_id)(x)
 
-    uniq_id += 1
     bn_out = mkl_bn.BatchNormalization(eps=node.op.eps,
                                        bias=node.op.bias,
                                        term=node.op.term,

@@ -433,9 +433,6 @@ class Conv2D(MKLConvBase):
 
             if (1 == first_run) {
                 if (!dnnLayoutCompare_%(precision)s(image_internal_layout_from_previous, image_internal_layout)) {
-                    #if __DEBUG__
-                        std::cout<<"############x layout is not equal" <<std::endl;
-                    #endif
                     if (NULL == internal_to_internal_image) {
                         CHECK_ERR( dnnConversionCreate_%(precision)s(&internal_to_internal_image, image_internal_layout_from_previous, image_internal_layout), err );
                     }
@@ -463,7 +460,6 @@ class Conv2D(MKLConvBase):
                 bias_buf = (%(dtype)s*)PyArray_DATA(%(bias)s);
             }
 
-            //#ifndef MKL_CONV_TEST
             if (1 == first_run) {
                 if (!dnnLayoutCompare_%(precision)s(weight_usr_layout, weight_internal_layout)) {
                     if (NULL == weight_to_internal) {
@@ -478,7 +474,6 @@ class Conv2D(MKLConvBase):
 
                 }
             }
-            //#endif
 
             #if __SUPPORT_USER_PARAMS__
                 if (weight_to_internal) {
@@ -561,10 +556,6 @@ class Conv2D(MKLConvBase):
                 std::cout <<"conv forward, z_internal_layout: @" <<z_internal_layout<<std::endl;
                 std::cout <<"conv forward, z_buf: @" <<z_buf<<std::endl;
                 std::cout << "forward, c_code end\\n" << std::endl;
-            #endif
-
-            #ifdef MKL_CONV_TEST
-               // TODO
             #endif
         """ % sub
         return ccode
@@ -794,15 +785,6 @@ class ConvGradInputs(MKLConvBase):
                if(NULL == weight_usr_layout) {
                    CHECK_ERR( dnnLayoutCreate_%(precision)s(&weight_usr_layout, fdimension, weightSize, weightStride), err );
                }
-
-               /*if (1 == first_run) {
-                   if (!dnnLayoutCompare_%(precision)s(weight_usr_layout, weight_internal_layout)) {
-                       if(NULL == weight_to_internal) {
-                           CHECK_ERR( dnnConversionCreate_%(precision)s(&weight_to_internal, weight_usr_layout, weight_internal_layout), err );
-                       }
-                   }
-               }*/
-
                if (weight_to_internal) {
                    if(NULL == weight_buf_tmp) {
                        CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&weight_buf_tmp, weight_internal_layout), err );
@@ -846,9 +828,6 @@ class ConvGradInputs(MKLConvBase):
            //image int2int cvt
            if (1 == first_run) {
                if (!dnnLayoutCompare_%(precision)s(image_internal_layout, image_internal_layout_from_previous)) {
-                   #if __DEBUG__
-                       std::cout<<"############gradInput, input layout is not equal" <<std::endl;
-                   #endif
                    if (NULL == internal_to_internal_image) {
                        CHECK_ERR( dnnConversionCreate_%(precision)s(&internal_to_internal_image, image_internal_layout, image_internal_layout_from_previous), err );
                    }
@@ -867,12 +846,6 @@ class ConvGradInputs(MKLConvBase):
            ((void**)PyArray_DATA(%(imagegrad)s))[1] = image_buf_to_previous;
 
            first_run = 0;
-
-           #if __DEBUG__
-               size_t _image_size = dnnLayoutGetMemorySize_%(precision)s(image_internal_layout);
-               std::cout << "gradInput, _image_size: "<<_image_size<<std::endl;
-               std::cout << "gradInput, c_code end\\n" << std::endl;
-           #endif
         """ % sub
         return ccode
 
@@ -1096,8 +1069,8 @@ class ConvGradWeights(MKLConvBase):
             """ % sub
 
         if bias is not None:
-            if biasgrad is not None:
-                ccode += """
+            ccode += """
+            if (NULL == %(biasgrad)s) {
                 %(biasgrad)s = (PyArrayObject*)PyArray_ZEROS(PyArray_NDIM(%(bias)s),
                                                              PyArray_DIMS(%(bias)s),
                                                              PyArray_TYPE(%(bias)s),
@@ -1107,11 +1080,9 @@ class ConvGradWeights(MKLConvBase):
                                 (long long)PyArray_NDIM(%(bias)s));
                     %(fail)s
                 }
-                """ % sub
-
-            ccode += """
-                bias_buf = (%(dtype)s*)PyArray_DATA(%(biasgrad)s);
-                """ % sub
+            }
+            bias_buf = (%(dtype)s*)PyArray_DATA(%(biasgrad)s);
+            """ % sub
 
         ccode += """
             // get internal layout for input from previous Op
@@ -1121,9 +1092,6 @@ class ConvGradWeights(MKLConvBase):
 
             if (1 == first_run) {
                 if (!dnnLayoutCompare_%(precision)s(image_internal_layout_from_previous, image_internal_layout)) {
-                    #if __DEBUG__
-                        std::cout<<"############gradWeight, image layout is not equal" <<std::endl;
-                    #endif
                     if (NULL == internal_to_internal_image) {
                         CHECK_ERR( dnnConversionCreate_%(precision)s(&internal_to_internal_image, image_internal_layout_from_previous, image_internal_layout), err );
                     }
@@ -1148,9 +1116,6 @@ class ConvGradWeights(MKLConvBase):
 
             if (1 == first_run) {
                 if (!dnnLayoutCompare_%(precision)s(gradz_internal_layout, gradz_internal_layout_for_weight)) {
-                    #if __DEBUG__
-                        std::cout<<"############gradWeight, gradz layout is not equal for weight" <<std::endl;
-                    #endif
                     if (NULL == internal_to_internal_gradz_for_weight) {
                         CHECK_ERR( dnnConversionCreate_%(precision)s(&internal_to_internal_gradz_for_weight, gradz_internal_layout, gradz_internal_layout_for_weight), err );
                     }
@@ -1171,9 +1136,6 @@ class ConvGradWeights(MKLConvBase):
             if (%(withBias)s) {
                 if (1 == first_run) {
                     if (!dnnLayoutCompare_%(precision)s(gradz_internal_layout, gradz_internal_layout_for_bias)) {
-                        #if __DEBUG__
-                            std::cout<<"############gradWeight, gradz layout is not equal for bias" <<std::endl;
-                        #endif
                         if (NULL == internal_to_internal_gradz_bias) {
                             CHECK_ERR( dnnConversionCreate_%(precision)s(&internal_to_internal_gradz_bias, gradz_internal_layout, gradz_internal_layout_for_bias), err );
                         }
@@ -1208,9 +1170,6 @@ class ConvGradWeights(MKLConvBase):
 
             //weight bwd -> fwd cvt
             if(!dnnLayoutCompare_%(precision)s(bwdf_weight_internal_layout, fwd_weight_internal_layout)) {
-                #if __DEBUG__
-                    std::cout<<"############gradWeight, bwdf_weight_internal_layout is not equal to fwd_weight_internal_layout" <<std::endl;
-                #endif
                 if (NULL == bwdf_weight_to_fwd_internal) {
                     CHECK_ERR( dnnConversionCreate_%(precision)s(&bwdf_weight_to_fwd_internal, bwdf_weight_internal_layout, fwd_weight_internal_layout), err );
                 }
@@ -1264,9 +1223,5 @@ class ConvGradWeights(MKLConvBase):
             #endif  //__SUPPORT_USER_PARAMS__
 
             first_run = 0;
-
-            #if __DEBUG__
-                std::cout << "gradWeight, c_code end\\n" << std::endl;
-            #endif
         """ % sub
         return ccode
