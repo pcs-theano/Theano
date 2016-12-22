@@ -1,3 +1,12 @@
+Date: 2016/12/22
+Author: Ciyong
+Changes:
+----------------------------------
+1. Add unit test for mkl_relu
+2. Update regression test script to skip graph generation if the machine
+didn't support it.
+
+
 Date: 2016/12/21
 Author: lvtao
 Changes:
