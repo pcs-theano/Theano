@@ -73,7 +73,7 @@ class MKLConvBase(gof.Op):
     def c_support_code(self):
         ccode = mkl_helper.header_text()
         ccode += """
-            #define __DEBUG__ 0
+            #define _MKL_DEBUG_ 0
             #define dimension 4
             #define CHECK_ERR(f, err) \\
                 do { \\
@@ -101,45 +101,45 @@ class MKLConvBase(gof.Op):
 
         ccode = """
             static int first_run = 1;
-            static size_t bottomSize[dimension] = {0}; //w, h, c, n
-            static size_t bottomStrides[dimension] = {0};
-            static size_t weightSize[dimension+1] = {0}; //w, h, c, n
-            static size_t weightStrides[dimension+1] = {0};
-            static size_t topSize[dimension] = {0}; //w, h, c, n
-            static size_t topStrides[dimension] = {0};
+            static size_t imageSize[dimension] = {0}; //w, h, c, n
+            static size_t imageStride[dimension] = {0};
+            static size_t weightSize[dimension+1] = {0}; //w, h, c, n, group
+            static size_t weightStride[dimension+1] = {0};
+            static size_t zSize[dimension] = {0}; //w, h, c, n
+            static size_t zStride[dimension] = {0};
             static size_t biasSize[1] = {0}; //w, h, c, n
-            static size_t biasStrides[1] = {0};
+            static size_t biasStride[1] = {0};
             static size_t groups = 1;
             static size_t fdimension = 0;
 
             ////////// debug only //////////
-            static size_t bottom_size;
-            static size_t weight_size;
-            static size_t top_size;
+            static size_t _image_size;
+            static size_t _weight_size;
+            static size_t _z_size;
             ///////////////////////////////
 
-            static size_t convStrides[2] = {0};
+            static size_t convStride[2] = {0};
             static int convPadding[2] = {0};
 
             static void *conv_res[dnnResourceNumber] = {0};
             static void *conv_res_bias[dnnResourceNumber] = {0};
 
-            static void *bottom_buffer_ptr = NULL;
-            static void *bottom_buffer_ptr_from_previous = NULL;
-            static void *bottom_buffer_ptr_to_previous = NULL;
+            static void *image_buf = NULL;
+            static void *image_buf_from_previous = NULL;
+            static void *image_buf_to_previous = NULL;
 
-            static void *top_buffer_ptr = NULL;
+            static void *z_buf = NULL;
 
-            static void *weight_buffer_ptr = NULL;
-            static void *weight_buffer_tmp_ptr = NULL;
+            static void *weight_buf = NULL;
+            static void *weight_buf_tmp = NULL;
 
-            static void *bwdf2fwd_weight_buffer_ptr = NULL;
-            static void *bias_buffer_ptr = NULL;
-            static void *bias_buffer_tmp_ptr = NULL;
+            static void *bwdf2fwd_weight_buf = NULL;
+            static void *bias_buf = NULL;
+            static void *bias_buf_tmp = NULL;
 
-            static void *topgrad_buffer_ptr = NULL;
-            static void *topgrad_buffer_ptr_for_weight = NULL;
-            static void *topgrad_buffer_ptr_for_bias = NULL;
+            static void *gradz_buf = NULL;
+            static void *gradz_buf_for_weight = NULL;
+            static void *gradz_buf_for_bias = NULL;
 
             static dnnError_t err;
             static dnnPrimitive_t pConvolutionFwd = NULL;
@@ -147,38 +147,38 @@ class MKLConvBase(gof.Op):
             static dnnPrimitive_t pConvolutionBwdFilter = NULL;
             static dnnPrimitive_t pConvolutionBwdBias = NULL;
 
-            static dnnPrimitive_t bwdf_convert_weight_to_fwd_int = NULL;
-            static dnnPrimitive_t bwdf_convert_wegith_to_usr = NULL;
-            static dnnPrimitive_t bwdd_convert_weight_to_bwdd_int = NULL;
+            static dnnPrimitive_t bwdf_weight_to_fwd_internal = NULL;
+            static dnnPrimitive_t bwdf_wegith_to_usr = NULL;
+            static dnnPrimitive_t bwdd_weight_to_bwdd_internal = NULL;
 
-            static dnnLayout_t bwdf_weight_int_layout = NULL;
-            static dnnLayout_t bottom_usr_layout = NULL;
+            static dnnLayout_t bwdf_weight_internal_layout = NULL;
+            static dnnLayout_t image_user_layout = NULL;
             static dnnLayout_t weight_usr_layout = NULL;
-            static dnnLayout_t top_usr_layout = NULL;
-            static dnnLayout_t bottom_int_layout = NULL;
-            static dnnLayout_t *bottom_int_layout_ptr = NULL;
-            static dnnLayout_t bottom_int_layout_from_previous = NULL;
-            static dnnLayout_t weight_int_layout = NULL;
-            static dnnLayout_t top_int_layout = NULL;
-            static dnnLayout_t topgrad_int_layout = NULL;
-            static dnnLayout_t topgrad_int_layout_for_weight = NULL;
-            static dnnLayout_t fwd_weight_int_layout = NULL;
+            static dnnLayout_t z_user_layout = NULL;
+            static dnnLayout_t image_internal_layout = NULL;
+            static dnnLayout_t *image_internal_layout_buf = NULL;
+            static dnnLayout_t image_internal_layout_from_previous = NULL;
+            static dnnLayout_t weight_internal_layout = NULL;
+            static dnnLayout_t z_internal_layout = NULL;
+            static dnnLayout_t gradz_internal_layout = NULL;
+            static dnnLayout_t gradz_internal_layout_for_weight = NULL;
+            static dnnLayout_t gradz_internal_layout_for_bias = NULL;
+            static dnnLayout_t fwd_weight_internal_layout = NULL;
 
-            static dnnLayout_t bias_int_layout = NULL;
+            static dnnLayout_t bias_internal_layout = NULL;
             static dnnLayout_t bias_usr_layout = NULL;
 
-            static dnnPrimitive_t convert_bottom_to_int = NULL;
-            static dnnPrimitive_t convert_weight_to_int = NULL;
-            static dnnPrimitive_t convert_top_to_int = NULL;
-            static dnnPrimitive_t convert_top_from_int = NULL;
-            static dnnPrimitive_t convert_weight_from_int = NULL;
-            static dnnPrimitive_t convert_bottom_from_int = NULL;
-            static dnnPrimitive_t convert_int2int_bottom = NULL;
-            static dnnPrimitive_t convert_int2int_topgrad_for_weight = NULL;
-            static dnnLayout_t topgrad_int_layout_for_bias = NULL;
-            static dnnPrimitive_t convert_int2int_topgrad_for_bias = NULL;
-            static dnnPrimitive_t convert_bias_to_int = NULL;
-            static dnnPrimitive_t convert_bias_from_int = NULL;
+            static dnnPrimitive_t image_to_internal = NULL;
+            static dnnPrimitive_t weight_to_internal = NULL;
+            static dnnPrimitive_t z_to_internal = NULL;
+            static dnnPrimitive_t weight_from_internal = NULL;
+            static dnnPrimitive_t image_from_internal = NULL;
+            static dnnPrimitive_t z_from_internal = NULL;
+            static dnnPrimitive_t internal_to_internal_image = NULL;
+            static dnnPrimitive_t internal_to_internal_gradz_for_weight = NULL;
+            static dnnPrimitive_t internal_to_internal_gradz_bias = NULL;
+            static dnnPrimitive_t bias_to_internal = NULL;
+            static dnnPrimitive_t bias_from_internal = NULL;
         """ % sub
         return ccode
 
@@ -199,40 +199,40 @@ class Conv2D(MKLConvBase):
         ccode = """
             //std::cout << "in c_cleanup_code_struct " << std::endl;
             //FIXME, remove below sentence if it's handled by conversion Op
-            //dnnDelete_%(precision)s(convert_bottom_to_int);
-            //dnnDelete_%(precision)s(convert_weight_to_int);
-            //dnnDelete_%(precision)s(convert_top_to_int);
-            //dnnDelete_%(precision)s(convert_top_from_int);
-            //dnnDelete_%(precision)s(convert_weight_from_int);
-            //dnnDelete_%(precision)s(convert_bottom_from_int);
-            //dnnLayoutDelete_%(precision)s(bottom_usr_layout);
+            //dnnDelete_%(precision)s(image_to_internal);
+            //dnnDelete_%(precision)s(weight_to_internal);
+            //dnnDelete_%(precision)s(z_to_internal);
+            //dnnDelete_%(precision)s(z_from_internal);
+            //dnnDelete_%(precision)s(weight_from_internal);
+            //dnnDelete_%(precision)s(image_from_internal);
+            //dnnLayoutDelete_%(precision)s(image_user_layout);
             //dnnLayoutDelete_%(precision)s(weight_usr_layout);
-            //dnnLayoutDelete_%(precision)s(top_usr_layout);
-            //dnnLayoutDelete_%(precision)s(bottom_int_layout);
-            //dnnLayoutDelete_%(precision)s(weight_int_layout);
-            //dnnLayoutDelete_%(precision)s(top_int_layout);
+            //dnnLayoutDelete_%(precision)s(z_user_layout);
+            //dnnLayoutDelete_%(precision)s(image_internal_layout);
+            //dnnLayoutDelete_%(precision)s(weight_internal_layout);
+            //dnnLayoutDelete_%(precision)s(z_internal_layout);
             //END
         """ % locals()
         return ccode
 
-    def make_node(self, img, kern, bias=None):
-        img = as_tensor_variable(img)
-        kern = as_tensor_variable(kern)
+    def make_node(self, image, weight, bias=None):
+        image = as_tensor_variable(image)
+        weight = as_tensor_variable(weight)
 
-        if img.type.ndim != 4:
-            raise TypeError('img must be 4D tensor')
-        if kern.type.ndim not in [4, 5]:
-            raise TypeError('kern must be 4D or 5D tensor')
+        if image.type.ndim != 4:
+            raise TypeError('image must be 4D tensor')
+        if weight.type.ndim not in [4, 5]:
+            raise TypeError('weight must be 4D or 5D tensor')
 
-        broadcastable = [img.type.broadcastable[0], kern.type.broadcastable[0],
+        broadcastable = [image.type.broadcastable[0], weight.type.broadcastable[0],
                          False, False]
-        dtype = img.type.dtype
+        dtype = image.type.dtype
 
         if bias is not None:
             bias = as_tensor_variable(bias)
-            inputs = [img, kern, bias]
+            inputs = [image, weight, bias]
         else:
-            inputs = [img, kern]
+            inputs = [image, weight]
         return Apply(self, inputs, [TensorType(dtype, broadcastable)()])
 
     def infer_shape(self, node, input_shape):
@@ -252,12 +252,12 @@ class Conv2D(MKLConvBase):
 
     def c_code(self, node, name, inp, out_, sub):
         if len(inp) > 2:
-            bottom, weight, bias = inp
+            image, weight, bias = inp
         else:
-            bottom, weight = inp
+            image, weight = inp
             bias = None
 
-        top, = out_
+        z, = out_
 
         if self.imshp is None:
             imshp = node.inputs[0].shape
@@ -294,9 +294,9 @@ class Conv2D(MKLConvBase):
         else:
             raise ValueError("border_mode must have two elements")
 
-        sub['bottom'] = bottom
+        sub['image'] = image
         sub['weight'] = weight
-        sub['top'] = top
+        sub['z'] = z
         sub['bias'] = bias
 
         if bias is not None:
@@ -323,44 +323,44 @@ class Conv2D(MKLConvBase):
             std::cout << "conv forward, c_code start" << std::endl;
             #endif
             if (NULL == pConvolutionFwd) {
-                convStrides[0] = %(dW)s;
-                convStrides[1] = %(dH)s;
+                convStride[0] = %(dW)s;
+                convStride[1] = %(dH)s;
                 convPadding[0] = -%(padW)s;
                 convPadding[1] = -%(padH)s;
 
-                bottomSize[0] = %(in_w)s;  //w
-                bottomSize[1] = %(in_h)s;  //h
-                bottomSize[2] = %(in_c)s;  //c
-                bottomSize[3] = %(in_n)s;  //n
-                bottomStrides[0] = 1;
-                bottomStrides[1] = bottomSize[0];
-                bottomStrides[2] = bottomSize[0] * bottomSize[1];
-                bottomStrides[3] = bottomSize[0] * bottomSize[1] * bottomSize[2];
+                imageSize[0] = %(in_w)s;  //w
+                imageSize[1] = %(in_h)s;  //h
+                imageSize[2] = %(in_c)s;  //c
+                imageSize[3] = %(in_n)s;  //n
+                imageStride[0] = 1;
+                imageStride[1] = imageSize[0];
+                imageStride[2] = imageSize[0] * imageSize[1];
+                imageStride[3] = imageSize[0] * imageSize[1] * imageSize[2];
 
                 weightSize[0] = %(k_w)s;
                 weightSize[1] = %(k_h)s;
                 weightSize[2] = %(k_c)s;
                 weightSize[3] = %(k_n)s;
                 weightSize[4] = %(grp)s;
-                weightStrides[0] = 1;
-                weightStrides[1] = weightSize[0];
-                weightStrides[2] = weightSize[0] * weightSize[1];
-                weightStrides[3] = weightSize[0] * weightSize[1] * weightSize[2];
-                weightStrides[4] = weightSize[0] * weightSize[1] * weightSize[2] * weightSize[3];
+                weightStride[0] = 1;
+                weightStride[1] = weightSize[0];
+                weightStride[2] = weightSize[0] * weightSize[1];
+                weightStride[3] = weightSize[0] * weightSize[1] * weightSize[2];
+                weightStride[4] = weightSize[0] * weightSize[1] * weightSize[2] * weightSize[3];
 
-                topSize[0] = %(o_w)s;
-                topSize[1] = %(o_h)s;
-                topSize[2] = %(o_c)s;
-                topSize[3] = %(o_n)s;
-                topStrides[0] = 1;
-                topStrides[1] = topSize[0];
-                topStrides[2] = topSize[0] * topSize[1];
-                topStrides[3] = topSize[0] * topSize[1] * topSize[2];
+                zSize[0] = %(o_w)s;
+                zSize[1] = %(o_h)s;
+                zSize[2] = %(o_c)s;
+                zSize[3] = %(o_n)s;
+                zStride[0] = 1;
+                zStride[1] = zSize[0];
+                zStride[2] = zSize[0] * zSize[1];
+                zStride[3] = zSize[0] * zSize[1] * zSize[2];
 
                 //printf("Bias = :", %(withBias)s);
                 if(%(withBias)s) {
                     biasSize[0] = %(o_c)s;
-                    biasStrides[0] = 1;
+                    biasStride[0] = 1;
                 }
 
                 groups = %(grp)s;
@@ -369,110 +369,110 @@ class Conv2D(MKLConvBase):
                 // Create conv forward primitive
                 if (%(withBias)s) {
                     CHECK_ERR( dnnGroupsConvolutionCreateForwardBias_%(precision)s(&pConvolutionFwd, NULL,
-                               dnnAlgorithmConvolutionDirect, groups, dimension, bottomSize,
-                               topSize, weightSize, convStrides, convPadding, dnnBorderZeros), err );
+                               dnnAlgorithmConvolutionDirect, groups, dimension, imageSize,
+                               zSize, weightSize, convStride, convPadding, dnnBorderZeros), err );
                 } else {
                     CHECK_ERR( dnnGroupsConvolutionCreateForward_%(precision)s(&pConvolutionFwd, NULL,
-                               dnnAlgorithmConvolutionDirect, groups, dimension, bottomSize,
-                               topSize, weightSize, convStrides, convPadding, dnnBorderZeros), err );
+                               dnnAlgorithmConvolutionDirect, groups, dimension, imageSize,
+                               zSize, weightSize, convStride, convPadding, dnnBorderZeros), err );
                 }
             }
 
             if (NULL == weight_usr_layout) {
-                CHECK_ERR( dnnLayoutCreate_%(precision)s(&weight_usr_layout, fdimension, weightSize, weightStrides), err );
+                CHECK_ERR( dnnLayoutCreate_%(precision)s(&weight_usr_layout, fdimension, weightSize, weightStride), err );
             }
-            if (NULL == bottom_int_layout) {
-                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&bottom_int_layout,
+            if (NULL == image_internal_layout) {
+                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&image_internal_layout,
                            pConvolutionFwd, dnnResourceSrc), err );
             }
-            if (NULL == weight_int_layout) {
-                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&weight_int_layout,
+            if (NULL == weight_internal_layout) {
+                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&weight_internal_layout,
                            pConvolutionFwd, dnnResourceFilter), err );
             }
-            if (NULL == top_int_layout) {
-                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&top_int_layout,
+            if (NULL == z_internal_layout) {
+                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&z_internal_layout,
                            pConvolutionFwd, dnnResourceDst), err );
             }
 
             if (%(withBias)s && NULL == bias_usr_layout) {
-                CHECK_ERR( dnnLayoutCreate_%(precision)s(&bias_usr_layout, 1, biasSize, biasStrides), err );
+                CHECK_ERR( dnnLayoutCreate_%(precision)s(&bias_usr_layout, 1, biasSize, biasStride), err );
             }
 
-            // Prepare top array, only create once for passing internal layout and
-            // internal data buffer for top data.
-            if ( !(%(top)s && PyArray_NDIM(%(top)s) == 4)) {
+            // Prepare z array, only create once for passing internal layout and
+            // internal data buffer for z data.
+            if ( !(%(z)s && PyArray_NDIM(%(z)s) == 4)) {
                 npy_intp out_dim[4];
-                out_dim[0] = topSize[3];
-                out_dim[1] = topSize[2];
-                out_dim[2] = topSize[1];
-                out_dim[3] = topSize[0];
-                %(top)s = (PyArrayObject*)PyArray_ZEROS(dimension,
+                out_dim[0] = zSize[3];
+                out_dim[1] = zSize[2];
+                out_dim[2] = zSize[1];
+                out_dim[3] = zSize[0];
+                %(z)s = (PyArrayObject*)PyArray_ZEROS(dimension,
                                                         out_dim,
-                                                        PyArray_TYPE(%(bottom)s),
+                                                        PyArray_TYPE(%(image)s),
                                                         0);
-                if (NULL == %(top)s) {
+                if (NULL == %(z)s) {
                     PyErr_Format(PyExc_RuntimeError,
-                                "Conv2D: Failed to allocate top of %%lld x %%lld x %%lld x %%lld",
+                                "Conv2D: Failed to allocate z of %%lld x %%lld x %%lld x %%lld",
                                 (long long)out_dim[0], (long long)out_dim[1], (long long)out_dim[2], (long long)out_dim[3]);
                     %(fail)s
                 }
             }
 
-            #if __DEBUG__
-                std::cout<<"bottom: "<<bottomSize[3]<<" x "<<bottomSize[2]<<" x "<<bottomSize[1]<<" x "<<bottomSize[0]<<std::endl;
+            #if _MKL_DEBUG_
+                std::cout<<"x: "<<imageSize[3]<<" x "<<imageSize[2]<<" x "<<imageSize[1]<<" x "<<imageSize[0]<<std::endl;
                 std::cout<<"weight: "<<weightSize[3]<<" x "<<weightSize[2]<<" x "<<weightSize[1]<<" x "<<weightSize[0]<<std::endl;
-                std::cout<<"top: "<<topSize[3]<<" x "<<topSize[2]<<" x "<<topSize[1]<<" x "<<topSize[0]<<std::endl;
-                std::cout<<"stride: "<<convStrides[1]<<" x "<<convStrides[0]<<std::endl;
+                std::cout<<"z: "<<zSize[3]<<" x "<<zSize[2]<<" x "<<zSize[1]<<" x "<<zSize[0]<<std::endl;
+                std::cout<<"stride: "<<convStride[1]<<" x "<<convStride[0]<<std::endl;
                 std::cout<<"padding: "<<convPadding[1]<<" x "<<convPadding[0]<<std::endl;
             #endif
 
             // get internal layout for input from previous Op
-            bottom_int_layout_from_previous = ((dnnLayout_t*)PyArray_DATA(%(bottom)s))[0];
+            image_internal_layout_from_previous = ((dnnLayout_t*)PyArray_DATA(%(image)s))[0];
             // get internal buffer for input from previous op
-            bottom_buffer_ptr_from_previous = ((void **)PyArray_DATA(%(bottom)s))[1];
+            image_buf_from_previous = ((void **)PyArray_DATA(%(image)s))[1];
 
             if (1 == first_run) {
-                if (!dnnLayoutCompare_%(precision)s(bottom_int_layout_from_previous, bottom_int_layout)) {
+                if (!dnnLayoutCompare_%(precision)s(image_internal_layout_from_previous, image_internal_layout)) {
                     #if __DEBUG__
-                        std::cout<<"############bottom layout is not equal" <<std::endl;
+                        std::cout<<"############x layout is not equal" <<std::endl;
                     #endif
-                    if (NULL == convert_int2int_bottom) {
-                        CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_int2int_bottom, bottom_int_layout_from_previous, bottom_int_layout), err );
+                    if (NULL == internal_to_internal_image) {
+                        CHECK_ERR( dnnConversionCreate_%(precision)s(&internal_to_internal_image, image_internal_layout_from_previous, image_internal_layout), err );
                     }
                 }
             }
-            if (convert_int2int_bottom) {
-                if (NULL == bottom_buffer_ptr) {
-                    CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&bottom_buffer_ptr, bottom_int_layout), err );
+            if (internal_to_internal_image) {
+                if (NULL == image_buf) {
+                    CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&image_buf, image_internal_layout), err );
                 }
-                CHECK_ERR( dnnConversionExecute_%(precision)s(convert_int2int_bottom, bottom_buffer_ptr_from_previous, bottom_buffer_ptr), err );
-                bottom_int_layout_ptr = &bottom_int_layout;
+                CHECK_ERR( dnnConversionExecute_%(precision)s(internal_to_internal_image, image_buf_from_previous, image_buf), err );
+                image_internal_layout_buf = &image_internal_layout;
             } else {
-                bottom_int_layout_ptr = &bottom_int_layout_from_previous;
-                bottom_buffer_ptr = bottom_buffer_ptr_from_previous;
+                image_internal_layout_buf = &image_internal_layout_from_previous;
+                image_buf = image_buf_from_previous;
             }
-            conv_res[dnnResourceSrc] = bottom_buffer_ptr;
+            conv_res[dnnResourceSrc] = image_buf;
 
-            #if __DEBUG__
-                std::cout<<"bottom internal layout = @"<<*bottom_int_layout_ptr<<std::endl;
-                std::cout<<"bottom internal buffer = @"<<bottom_buffer_ptr<<std::endl;
+            #if _MKL_DEBUG_
+                std::cout<<"x internal layout = @"<<*image_internal_layout_buf<<std::endl;
+                std::cout<<"x internal buffer = @"<<image_buf<<std::endl;
             #endif
 
-            weight_buffer_ptr = (%(dtype)s*)PyArray_DATA(%(weight)s);
+            weight_buf = (%(dtype)s*)PyArray_DATA(%(weight)s);
             if(%(withBias)s) {
-                bias_buffer_ptr = (%(dtype)s*)PyArray_DATA(%(bias)s);
+                bias_buf = (%(dtype)s*)PyArray_DATA(%(bias)s);
             }
 
             //#ifndef MKL_CONV_TEST
             if (1 == first_run) {
-                if (!dnnLayoutCompare_%(precision)s(weight_usr_layout, weight_int_layout)) {
-                    if (NULL == convert_weight_to_int) {
-                        CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_weight_to_int, weight_usr_layout, weight_int_layout), err );
+                if (!dnnLayoutCompare_%(precision)s(weight_usr_layout, weight_internal_layout)) {
+                    if (NULL == weight_to_internal) {
+                        CHECK_ERR( dnnConversionCreate_%(precision)s(&weight_to_internal, weight_usr_layout, weight_internal_layout), err );
                     }
 
-                    if (%(withBias)s && !dnnLayoutCompare_%(precision)s(bias_usr_layout, bias_int_layout)) {
-                        if (NULL == convert_bias_to_int) {
-                        CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_bias_to_int, bias_usr_layout, bias_int_layout), err );
+                    if (%(withBias)s && !dnnLayoutCompare_%(precision)s(bias_usr_layout, bias_internal_layout)) {
+                        if (NULL == bias_to_internal) {
+                        CHECK_ERR( dnnConversionCreate_%(precision)s(&bias_to_internal, bias_usr_layout, bias_internal_layout), err );
                         }
                     }
 
@@ -481,67 +481,67 @@ class Conv2D(MKLConvBase):
             //#endif
 
             #if __SUPPORT_USER_PARAMS__
-                if (convert_weight_to_int) {
-                    if (NULL == weight_buffer_tmp_ptr) {
-                        CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&weight_buffer_tmp_ptr, weight_int_layout), err );
+                if (weight_to_internal) {
+                    if (NULL == weight_buf_tmp) {
+                        CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&weight_buf_tmp, weight_internal_layout), err );
                     }
-                    CHECK_ERR( dnnConversionExecute_%(precision)s(convert_weight_to_int, weight_buffer_ptr, weight_buffer_tmp_ptr), err );
-                    conv_res[dnnResourceFilter] = weight_buffer_tmp_ptr;
+                    CHECK_ERR( dnnConversionExecute_%(precision)s(weight_to_internal, weight_buf, weight_buf_tmp), err );
+                    conv_res[dnnResourceFilter] = weight_buf_tmp;
                 } else {
-                    conv_res[dnnResourceFilter] = weight_buffer_ptr;
+                    conv_res[dnnResourceFilter] = weight_buf;
                 }
 
-                if (%(withBias)s && convert_bias_to_int) {
-                    if (NULL == bias_buffer_tmp_ptr) {
-                        CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&bias_buffer_tmp_ptr, bias_int_layout), err );
+                if (%(withBias)s && bias_to_internal) {
+                    if (NULL == bias_buf_tmp) {
+                        CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&bias_buf_tmp, bias_internal_layout), err );
                     }
-                    CHECK_ERR( dnnConversionExecute_%(precision)s(convert_bias_to_int,bias_buffer_ptr, bias_buffer_tmp_ptr), err );
-                    conv_res[dnnResourceBias] = bias_buffer_tmp_ptr;
+                    CHECK_ERR( dnnConversionExecute_%(precision)s(bias_to_internal,bias_buf, bias_buf_tmp), err );
+                    conv_res[dnnResourceBias] = bias_buf_tmp;
                 } else {
-                    conv_res[dnnResourceBias] = bias_buffer_ptr;
+                    conv_res[dnnResourceBias] = bias_buf;
                 }
             #else //__SUPPORT_USER_PARAMS__
                 if (1 == first_run) {
-                    if (convert_weight_to_int) {
-                        if (NULL == weight_buffer_tmp_ptr) {
-                            CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&weight_buffer_tmp_ptr, weight_int_layout), err );
+                    if (weight_to_internal) {
+                        if (NULL == weight_buf_tmp) {
+                            CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&weight_buf_tmp, weight_internal_layout), err );
                         }
-                        CHECK_ERR( dnnConversionExecute_%(precision)s(convert_weight_to_int, weight_buffer_ptr, weight_buffer_tmp_ptr), err );
-                        memcpy(weight_buffer_ptr, weight_buffer_tmp_ptr, dnnLayoutGetMemorySize_%(precision)s(weight_int_layout));
+                        CHECK_ERR( dnnConversionExecute_%(precision)s(weight_to_internal, weight_buf, weight_buf_tmp), err );
+                        memcpy(weight_buf, weight_buf_tmp, dnnLayoutGetMemorySize_%(precision)s(weight_internal_layout));
                     }
                 }
 
-                if (%(withBias)s && convert_bias_to_int) {
-                    if (NULL == bias_buffer_tmp_ptr) {
-                        CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&bias_buffer_tmp_ptr, bias_int_layout), err );
+                if (%(withBias)s && bias_to_internal) {
+                    if (NULL == bias_buf_tmp) {
+                        CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&bias_buf_tmp, bias_internal_layout), err );
                     }
-                    CHECK_ERR( dnnConversionExecute_%(precision)s(convert_bias_to_int, bias_buffer_ptr, bias_buffer_tmp_ptr), err );
-                    memcpy(bias_buffer_ptr, bias_buffer_tmp_ptr, dnnLayoutGetMemorySize_%(precision)s(bias_int_layout));
+                    CHECK_ERR( dnnConversionExecute_%(precision)s(bias_to_internal, bias_buf, bias_buf_tmp), err );
+                    memcpy(bias_buf, bias_buf_tmp, dnnLayoutGetMemorySize_%(precision)s(bias_internal_layout));
                }
 
-               conv_res[dnnResourceFilter] = weight_buffer_ptr;
-               if(%(withBias)s) conv_res[dnnResourceBias] = bias_buffer_ptr;
+               conv_res[dnnResourceFilter] = weight_buf;
+               if(%(withBias)s) conv_res[dnnResourceBias] = bias_buf;
             #endif //__SUPPORT_USER_PARAMS__
 
-            //Allocate internal buffer for top data, only apply once
-            if (NULL == top_buffer_ptr) {
-                CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&top_buffer_ptr, top_int_layout), err );
+            //Allocate internal buffer for z data, only apply once
+            if (NULL == z_buf) {
+                CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&z_buf, z_internal_layout), err );
             }
-            conv_res[dnnResourceDst] = top_buffer_ptr;
+            conv_res[dnnResourceDst] = z_buf;
 
             #if __DEBUG__
-                bottom_size = dnnLayoutGetMemorySize_%(precision)s(*bottom_int_layout_ptr);
-                weight_size = dnnLayoutGetMemorySize_%(precision)s(weight_int_layout);
-                top_size = dnnLayoutGetMemorySize_%(precision)s(top_int_layout);
-                bias_size = dnnLayoutGetMemorySize_%(precision)s(bias_int_layout);
+                _image_size = dnnLayoutGetMemorySize_%(precision)s(*image_internal_layout_buf);
+                _weight_size = dnnLayoutGetMemorySize_%(precision)s(weight_internal_layout);
+                _z_size = dnnLayoutGetMemorySize_%(precision)s(z_internal_layout);
+                bias_size = dnnLayoutGetMemorySize_%(precision)s(bias_internal_layout);
                 std::cout << "forward, pConvolution = @" << pConvolutionFwd << std::endl;
-                std::cout<<"bottom size: "<<bottomSize[3]<<" x "<<bottomSize[2]<<" x "<<bottomSize[1]<<" x "<<bottomSize[0]<<", acutal size: "<<bottom_size<<std::endl;
-                std::cout<<"bottom buffer ptr: "<<bottom_buffer_ptr<<std::endl;
-                std::cout<<"weight size: "<<weightSize[3]<<" x "<<weightSize[2]<<" x "<<weightSize[1]<<" x "<<weightSize[0]<<", actual size: "<<weight_size<<std::endl;
-                std::cout<<"weight buffer ptr: "<<weight_buffer_ptr<<std::endl;
-                std::cout<<"top size: "<<topSize[3]<<" x "<<topSize[2]<<" x "<<topSize[1]<<" x "<<topSize[0]<<", actual size: "<<top_size<<std::endl;
+                std::cout<<"x size: "<<imageSize[3]<<" x "<<imageSize[2]<<" x "<<imageSize[1]<<" x "<<imageSize[0]<<", acutal size: "<<_image_size<<std::endl;
+                std::cout<<"x buffer ptr: "<<image_buf<<std::endl;
+                std::cout<<"weight size: "<<weightSize[3]<<" x "<<weightSize[2]<<" x "<<weightSize[1]<<" x "<<weightSize[0]<<", actual size: "<<_weight_size<<std::endl;
+                std::cout<<"weight buffer ptr: "<<weight_buf<<std::endl;
+                std::cout<<"z size: "<<zSize[3]<<" x "<<zSize[2]<<" x "<<zSize[1]<<" x "<<zSize[0]<<", actual size: "<<_z_size<<std::endl;
                 std::cout << "bias_size = " << bias_size << std::endl;
-                std::cout<<"top buffer ptr: "<<top_buffer_ptr<<std::endl;
+                std::cout<<"z buffer ptr: "<<z_buf<<std::endl;
                 std::cout << "forward, pConvolution = @" << pConvolutionFwd << std::endl;
                 std::cout << "forward, conv_res[Src] = @" << conv_res[dnnResourceSrc] << std::endl;
                 std::cout << "forward, conv_res[Filter] = @" << conv_res[dnnResourceFilter] << std::endl;
@@ -551,15 +551,15 @@ class Conv2D(MKLConvBase):
             //Execute convolution forward pass
             CHECK_ERR( dnnExecute_%(precision)s(pConvolutionFwd, (void**)conv_res), err );
 
-            // return the internal layout and data buffer for top directly.
-            ((dnnLayout_t*)PyArray_DATA(%(top)s))[0] = top_int_layout;
-            ((void**)PyArray_DATA(%(top)s))[1] = top_buffer_ptr;
+            // return the internal layout and data buffer for z directly.
+            ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = z_internal_layout;
+            ((void**)PyArray_DATA(%(z)s))[1] = z_buf;
 
             first_run = 0;
             #if __DEBUG__
-                printf(\"convFw z:%%x, %%x, %%x\\n\",%(top)s,top_int_layout,top_buffer_ptr);
-                std::cout <<"conv forward, top_int_layout: @" <<top_int_layout<<std::endl;
-                std::cout <<"conv forward, top_buffer_ptr: @" <<top_buffer_ptr<<std::endl;
+                printf(\"convFw z:%%x, %%x, %%x\\n\",%(z)s,z_internal_layout,z_buf);
+                std::cout <<"conv forward, z_internal_layout: @" <<z_internal_layout<<std::endl;
+                std::cout <<"conv forward, z_buf: @" <<z_buf<<std::endl;
                 std::cout << "forward, c_code end\\n" << std::endl;
             #endif
 
@@ -571,21 +571,21 @@ class Conv2D(MKLConvBase):
 
     def grad(self, inp, grads):
         if len(inp) > 2:
-            bottom, weights, bias = inp
+            image, weights, bias = inp
         else:
-            bottom, weights = inp
+            image, weights = inp
             bias = None
 
-        top, = grads
+        gz, = grads
         d_images = ConvGradInputs(border_mode=self.border_mode,
                                   subsample=self.subsample,
                                   imshp=self.imshp,
-                                  kshp=self.kshp)(bottom, weights, top)
+                                  kshp=self.kshp)(image, weights, gz)
 
         dlist = ConvGradWeights(border_mode=self.border_mode,
                                 subsample=self.subsample,
                                 imshp=self.imshp,
-                                kshp=self.kshp)(bottom, weights, top, bias)
+                                kshp=self.kshp)(image, weights, gz, bias)
 
         if len(dlist) > 1:
             d_weights, d_bias = dlist
@@ -611,39 +611,39 @@ class ConvGradInputs(MKLConvBase):
         ccode = """
             //std::cout << "in gradI c_cleanup_code_struct " << std::endl;
             //FIXME, remove below sentence if it's handled by conversion Op
-            //dnnDelete_%(precision)s(convert_bottom_to_int);
-            //dnnDelete_%(precision)s(convert_weight_to_int);
-            //dnnDelete_%(precision)s(convert_top_to_int);
-            //dnnDelete_%(precision)s(convert_top_from_int);
-            //dnnDelete_%(precision)s(convert_weight_from_int);
-            //dnnDelete_%(precision)s(convert_bottom_from_int);
-            //dnnLayoutDelete_%(precision)s(bottom_usr_layout);
+            //dnnDelete_%(precision)s(image_to_internal);
+            //dnnDelete_%(precision)s(weight_to_internal);
+            //dnnDelete_%(precision)s(z_to_internal);
+            //dnnDelete_%(precision)s(z_from_internal);
+            //dnnDelete_%(precision)s(weight_from_internal);
+            //dnnDelete_%(precision)s(image_from_internal);
+            //dnnLayoutDelete_%(precision)s(image_user_layout);
             //dnnLayoutDelete_%(precision)s(weight_usr_layout);
-            //dnnLayoutDelete_%(precision)s(top_usr_layout);
-            //dnnLayoutDelete_%(precision)s(bottom_int_layout);
-            //dnnLayoutDelete_%(precision)s(weight_int_layout);
-            //dnnLayoutDelete_%(precision)s(top_int_layout);
+            //dnnLayoutDelete_%(precision)s(z_user_layout);
+            //dnnLayoutDelete_%(precision)s(image_internal_layout);
+            //dnnLayoutDelete_%(precision)s(weight_internal_layout);
+            //dnnLayoutDelete_%(precision)s(z_internal_layout);
             //END
         """ % locals()
         return ccode
 
-    def make_node(self, image, kern, topgrad):
+    def make_node(self, image, weight, gradz):
         image = as_tensor_variable(image)
-        kern = as_tensor_variable(kern)
-        topgrad = as_tensor_variable(topgrad)
-        if kern.type.ndim not in [4, 5]:
-            raise TypeError('kern must be 4D or 5D tensor')
-        if topgrad.type.ndim != 4:
-            raise TypeError('topgrad must be 4D tensor')
+        weight = as_tensor_variable(weight)
+        gradz = as_tensor_variable(gradz)
+        if weight.type.ndim not in [4, 5]:
+            raise TypeError('weight must be 4D or 5D tensor')
+        if gradz.type.ndim != 4:
+            raise TypeError('gradz must be 4D tensor')
 
-        broadcastable = [topgrad.type.broadcastable[0], kern.type.broadcastable[1],
+        broadcastable = [gradz.type.broadcastable[0], weight.type.broadcastable[1],
                          False, False]
-        dtype = kern.type.dtype
-        return Apply(self, [image, kern, topgrad], [TensorType(dtype, broadcastable)()])
+        dtype = weight.type.dtype
+        return Apply(self, [image, weight, gradz], [TensorType(dtype, broadcastable)()])
 
     def c_code(self, node, name, inp, out_, sub):
-        bottom, weights, topgrad = inp
-        bottomgrad, = out_
+        image, weights, gradz = inp
+        imagegrad, = out_
         if self.imshp is None:
             imshp = node.inputs[0].shape
         else:
@@ -685,10 +685,10 @@ class ConvGradInputs(MKLConvBase):
         else:
             raise ValueError("border_mode must have two elements")
 
-        sub['bottom'] = bottom
-        sub['bottomgrad'] = bottomgrad
+        sub['image'] = image
+        sub['imagegrad'] = imagegrad
         sub['weight'] = weights
-        sub['topgrad'] = topgrad
+        sub['gradz'] = gradz
 
         if node.inputs[0].type.dtype == "float32":
             sub['precision'] = 'F32'
@@ -703,174 +703,174 @@ class ConvGradInputs(MKLConvBase):
                 std::cout << "gradInput, c_code start " << std::endl;
             #endif
             if (NULL == pConvolutionBwdData) {
-                convStrides[0] = %(dW)s;
-                convStrides[1] = %(dH)s;
+                convStride[0] = %(dW)s;
+                convStride[1] = %(dH)s;
 
                 convPadding[0] = -%(padW)s;
                 convPadding[1] = -%(padH)s;
 
-                bottomSize[0] = %(in_w)s;  //w
-                bottomSize[1] = %(in_h)s;  //h
-                bottomSize[2] = %(in_c)s;  //c
-                bottomSize[3] = %(in_n)s;  //n
-                bottomStrides[0] = 1;
-                bottomStrides[1] = bottomSize[0];
-                bottomStrides[2] = bottomSize[0] * bottomSize[1];
-                bottomStrides[3] = bottomSize[0] * bottomSize[1] * bottomSize[2];
+                imageSize[0] = %(in_w)s;  //w
+                imageSize[1] = %(in_h)s;  //h
+                imageSize[2] = %(in_c)s;  //c
+                imageSize[3] = %(in_n)s;  //n
+                imageStride[0] = 1;
+                imageStride[1] = imageSize[0];
+                imageStride[2] = imageSize[0] * imageSize[1];
+                imageStride[3] = imageSize[0] * imageSize[1] * imageSize[2];
 
                 weightSize[0] = %(k_w)s;
                 weightSize[1] = %(k_h)s;
                 weightSize[2] = %(k_c)s;
                 weightSize[3] = %(k_n)s;
                 weightSize[4] = %(grp)s;
-                weightStrides[0] = 1;
-                weightStrides[1] = weightSize[0];
-                weightStrides[2] = weightSize[0] * weightSize[1];
-                weightStrides[3] = weightSize[0] * weightSize[1] * weightSize[2];
-                weightStrides[4] = weightSize[0] * weightSize[1] * weightSize[2] * weightSize[3];
+                weightStride[0] = 1;
+                weightStride[1] = weightSize[0];
+                weightStride[2] = weightSize[0] * weightSize[1];
+                weightStride[3] = weightSize[0] * weightSize[1] * weightSize[2];
+                weightStride[4] = weightSize[0] * weightSize[1] * weightSize[2] * weightSize[3];
 
-                topSize[0] = %(o_w)s;
-                topSize[1] = %(o_h)s;
-                topSize[2] = %(o_c)s;
-                topSize[3] = %(o_n)s;
-                topStrides[0] = 1;
-                topStrides[1] = topSize[0];
-                topStrides[2] = topSize[0] * topSize[1];
-                topStrides[3] = topSize[0] * topSize[1] * topSize[2];
+                zSize[0] = %(o_w)s;
+                zSize[1] = %(o_h)s;
+                zSize[2] = %(o_c)s;
+                zSize[3] = %(o_n)s;
+                zStride[0] = 1;
+                zStride[1] = zSize[0];
+                zStride[2] = zSize[0] * zSize[1];
+                zStride[3] = zSize[0] * zSize[1] * zSize[2];
 
                 groups = %(grp)s;
                 fdimension = dimension + (groups != 1);
 
                 // Create conv gradInput primitive
                 CHECK_ERR( dnnGroupsConvolutionCreateBackwardData_%(precision)s(&pConvolutionBwdData, NULL,
-                           dnnAlgorithmConvolutionDirect, groups, dimension, bottomSize,
-                           topSize, weightSize, convStrides, convPadding, dnnBorderZeros), err );
+                           dnnAlgorithmConvolutionDirect, groups, dimension, imageSize,
+                           zSize, weightSize, convStride, convPadding, dnnBorderZeros), err );
             }
-            if (NULL == weight_int_layout) {
-                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&weight_int_layout,
+            if (NULL == weight_internal_layout) {
+                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&weight_internal_layout,
                            pConvolutionBwdData, dnnResourceFilter), err );
             }
-            if (NULL == bottom_int_layout) {
-                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&bottom_int_layout,
+            if (NULL == image_internal_layout) {
+                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&image_internal_layout,
                            pConvolutionBwdData, dnnResourceDiffSrc), err );
             }
 
             if (NULL == pConvolutionFwd) {
                 // Create conv forward primitive
                     CHECK_ERR( dnnGroupsConvolutionCreateForward_%(precision)s(&pConvolutionFwd, NULL,
-                               dnnAlgorithmConvolutionDirect, groups, dimension, bottomSize,
-                               topSize, weightSize, convStrides, convPadding, dnnBorderZeros), err );
+                               dnnAlgorithmConvolutionDirect, groups, dimension, imageSize,
+                               zSize, weightSize, convStride, convPadding, dnnBorderZeros), err );
             }
-            if(NULL == fwd_weight_int_layout) {
-                CHECK_ERR(dnnLayoutCreateFromPrimitive_%(precision)s(&fwd_weight_int_layout,
+            if(NULL == fwd_weight_internal_layout) {
+                CHECK_ERR(dnnLayoutCreateFromPrimitive_%(precision)s(&fwd_weight_internal_layout,
                           pConvolutionFwd, dnnResourceFilter), err );
             }
 
-            if ( !(%(bottomgrad)s)) {
-                %(bottomgrad)s = (PyArrayObject*)PyArray_ZEROS(PyArray_NDIM(%(bottom)s),
-                                                               PyArray_DIMS(%(bottom)s),
-                                                               PyArray_TYPE(%(bottom)s),
+            if ( !(%(imagegrad)s)) {
+                %(imagegrad)s = (PyArrayObject*)PyArray_ZEROS(PyArray_NDIM(%(image)s),
+                                                               PyArray_DIMS(%(image)s),
+                                                               PyArray_TYPE(%(image)s),
                                                                0);
-                if (NULL == %(bottomgrad)s) {
+                if (NULL == %(imagegrad)s) {
                     PyErr_Format(PyExc_RuntimeError,
-                                "conv_gradInput: Failed to allocate bottom of %%lld x %%lld x %%lld x %%lld",
-                                (long long)(PyArray_DIMS(%(bottom)s))[0], (long long)(PyArray_DIMS(%(bottom)s))[1],
-                                (long long)(PyArray_DIMS(%(bottom)s))[2], (long long)(PyArray_DIMS(%(bottom)s))[3]);
+                                "conv_gradInput: Failed to allocate image of %%lld x %%lld x %%lld x %%lld",
+                                (long long)(PyArray_DIMS(%(image)s))[0], (long long)(PyArray_DIMS(%(image)s))[1],
+                                (long long)(PyArray_DIMS(%(image)s))[2], (long long)(PyArray_DIMS(%(image)s))[3]);
                     %(fail)s
                 }
            }
 
            //weight use its own buffer
-           weight_buffer_ptr = (%(dtype)s*)PyArray_DATA(%(weight)s);
+           weight_buf = (%(dtype)s*)PyArray_DATA(%(weight)s);
 
-           //get internal layout for topgrad from previous Op
-           topgrad_int_layout = ((dnnLayout_t*)PyArray_DATA(%(topgrad)s))[0];
-           //get internal buffer for topgrad from previous op
-           topgrad_buffer_ptr = ((void **)PyArray_DATA(%(topgrad)s))[1];
+           //get internal layout for gradz from previous Op
+           gradz_internal_layout = ((dnnLayout_t*)PyArray_DATA(%(gradz)s))[0];
+           //get internal buffer for gradz from previous op
+           gradz_buf = ((void **)PyArray_DATA(%(gradz)s))[1];
 
-           conv_res[dnnResourceDiffDst] = topgrad_buffer_ptr;
+           conv_res[dnnResourceDiffDst] = gradz_buf;
 
            #if __SUPPORT_USER_PARAMS__
                if(NULL == weight_usr_layout) {
-                   CHECK_ERR( dnnLayoutCreate_%(precision)s(&weight_usr_layout, fdimension, weightSize, weightStrides), err );
+                   CHECK_ERR( dnnLayoutCreate_%(precision)s(&weight_usr_layout, fdimension, weightSize, weightStride), err );
                }
 
                /*if (1 == first_run) {
-                   if (!dnnLayoutCompare_%(precision)s(weight_usr_layout, weight_int_layout)) {
-                       if(NULL == convert_weight_to_int) {
-                           CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_weight_to_int, weight_usr_layout, weight_int_layout), err );
+                   if (!dnnLayoutCompare_%(precision)s(weight_usr_layout, weight_internal_layout)) {
+                       if(NULL == weight_to_internal) {
+                           CHECK_ERR( dnnConversionCreate_%(precision)s(&weight_to_internal, weight_usr_layout, weight_internal_layout), err );
                        }
                    }
                }*/
 
-               if (convert_weight_to_int) {
-                   if(NULL == weight_buffer_tmp_ptr) {
-                       CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&weight_buffer_tmp_ptr, weight_int_layout), err );
+               if (weight_to_internal) {
+                   if(NULL == weight_buf_tmp) {
+                       CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&weight_buf_tmp, weight_internal_layout), err );
                    }
-                   CHECK_ERR( dnnConversionExecute_%(precision)s(convert_weight_to_int, weight_buffer_ptr, weight_buffer_tmp_ptr), err );
+                   CHECK_ERR( dnnConversionExecute_%(precision)s(weight_to_internal, weight_buf, weight_buf_tmp), err );
                } else {
-                   weight_buffer_tmp_ptr = weight_buffer_ptr;
+                   weight_buf_tmp = weight_buf;
                }
            #else
                if (1 == first_run) {
-                   if (!dnnLayoutCompare_%(precision)s(fwd_weight_int_layout, weight_int_layout)) {
-                       if(NULL == bwdd_convert_weight_to_bwdd_int) {
-                           CHECK_ERR( dnnConversionCreate_%(precision)s(&bwdd_convert_weight_to_bwdd_int, fwd_weight_int_layout, weight_int_layout), err );
+                   if (!dnnLayoutCompare_%(precision)s(fwd_weight_internal_layout, weight_internal_layout)) {
+                       if(NULL == bwdd_weight_to_bwdd_internal) {
+                           CHECK_ERR( dnnConversionCreate_%(precision)s(&bwdd_weight_to_bwdd_internal, fwd_weight_internal_layout, weight_internal_layout), err );
                        }
                    }
                }
-               if (bwdd_convert_weight_to_bwdd_int) {
-                   if(NULL == weight_buffer_tmp_ptr) {
-                       CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&weight_buffer_tmp_ptr, weight_int_layout), err );
+               if (bwdd_weight_to_bwdd_internal) {
+                   if(NULL == weight_buf_tmp) {
+                       CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&weight_buf_tmp, weight_internal_layout), err );
                    }
-                   CHECK_ERR( dnnConversionExecute_%(precision)s(bwdd_convert_weight_to_bwdd_int, weight_buffer_ptr, weight_buffer_tmp_ptr), err );
+                   CHECK_ERR( dnnConversionExecute_%(precision)s(bwdd_weight_to_bwdd_internal, weight_buf, weight_buf_tmp), err );
                } else {
-                   weight_buffer_tmp_ptr = weight_buffer_ptr;
+                   weight_buf_tmp = weight_buf;
                }
            #endif
 
-           conv_res[dnnResourceFilter] = weight_buffer_tmp_ptr;
+           conv_res[dnnResourceFilter] = weight_buf_tmp;
 
-           //Allocate internal buffer for bottomgrad data
-           if (NULL == bottom_buffer_ptr) {
-               CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&bottom_buffer_ptr, bottom_int_layout), err );
+           //Allocate internal buffer for imagegrad data
+           if (NULL == image_buf) {
+               CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&image_buf, image_internal_layout), err );
            }
-           conv_res[dnnResourceDiffSrc] = bottom_buffer_ptr;
+           conv_res[dnnResourceDiffSrc] = image_buf;
 
            //Execute convolution gradInput pass
            CHECK_ERR( dnnExecute_%(precision)s(pConvolutionBwdData, (void**)conv_res), err );
 
-           //get bottom_int_layout from forward pass, pass the data buffer match previous layout.
-           bottom_int_layout_from_previous = ((dnnLayout_t*)PyArray_DATA(%(bottom)s))[0];
+           //get image_internal_layout from forward pass, pass the data buffer match previous layout.
+           image_internal_layout_from_previous = ((dnnLayout_t*)PyArray_DATA(%(image)s))[0];
 
-           //bottom int2int cvt
+           //image int2int cvt
            if (1 == first_run) {
-               if (!dnnLayoutCompare_%(precision)s(bottom_int_layout, bottom_int_layout_from_previous)) {
+               if (!dnnLayoutCompare_%(precision)s(image_internal_layout, image_internal_layout_from_previous)) {
                    #if __DEBUG__
                        std::cout<<"############gradInput, input layout is not equal" <<std::endl;
                    #endif
-                   if (NULL == convert_int2int_bottom) {
-                       CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_int2int_bottom, bottom_int_layout, bottom_int_layout_from_previous), err );
+                   if (NULL == internal_to_internal_image) {
+                       CHECK_ERR( dnnConversionCreate_%(precision)s(&internal_to_internal_image, image_internal_layout, image_internal_layout_from_previous), err );
                    }
                }
            }
-           if (convert_int2int_bottom) {
-               if (NULL == bottom_buffer_ptr_to_previous) {
-                   CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&bottom_buffer_ptr_to_previous, bottom_int_layout_from_previous), err );
+           if (internal_to_internal_image) {
+               if (NULL == image_buf_to_previous) {
+                   CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&image_buf_to_previous, image_internal_layout_from_previous), err );
                }
-               CHECK_ERR( dnnConversionExecute_%(precision)s(convert_int2int_bottom, bottom_buffer_ptr, bottom_buffer_ptr_to_previous), err );
+               CHECK_ERR( dnnConversionExecute_%(precision)s(internal_to_internal_image, image_buf, image_buf_to_previous), err );
            } else {
-               bottom_buffer_ptr_to_previous = bottom_buffer_ptr;
+               image_buf_to_previous = image_buf;
            }
 
-           ((dnnLayout_t*)PyArray_DATA(%(bottomgrad)s))[0] = bottom_int_layout_from_previous;
-           ((void**)PyArray_DATA(%(bottomgrad)s))[1] = bottom_buffer_ptr_to_previous;
+           ((dnnLayout_t*)PyArray_DATA(%(imagegrad)s))[0] = image_internal_layout_from_previous;
+           ((void**)PyArray_DATA(%(imagegrad)s))[1] = image_buf_to_previous;
 
            first_run = 0;
 
            #if __DEBUG__
-               size_t bottom_size = dnnLayoutGetMemorySize_%(precision)s(bottom_int_layout);
-               std::cout << "gradInput, bottom_size: "<<bottom_size<<std::endl;
+               size_t _image_size = dnnLayoutGetMemorySize_%(precision)s(image_internal_layout);
+               std::cout << "gradInput, _image_size: "<<_image_size<<std::endl;
                std::cout << "gradInput, c_code end\\n" << std::endl;
            #endif
         """ % sub
@@ -885,34 +885,34 @@ class ConvGradWeights(MKLConvBase):
         self.filter_flip = filter_flip
         self.filter_dilation = filter_dilation
 
-    def make_node(self, image, weight, topgrad, bias=None):
+    def make_node(self, image, weight, gradz, bias=None):
         image = as_tensor_variable(image)
         weight = as_tensor_variable(weight)
-        topgrad = as_tensor_variable(topgrad)
+        gradz = as_tensor_variable(gradz)
 
         if image.type.ndim != 4:
             raise TypeError('image must be 4D tensor')
         if weight.type.ndim not in [4, 5]:
             raise TypeError('weightmust be 4D or 5D tensor')
-        if topgrad.type.ndim != 4:
-            raise TypeError('topgrad must be 4D tensor')
+        if gradz.type.ndim != 4:
+            raise TypeError('gradz must be 4D tensor')
 
         if bias is not None:
             bias = as_tensor_variable(bias)
-            inputs = [image, weight, topgrad, bias]
+            inputs = [image, weight, gradz, bias]
             outputs = [weight.type(), bias.type()]
         else:
-            inputs = [image, weight, topgrad]
+            inputs = [image, weight, gradz]
             outputs = [weight.type()]
 
         return Apply(self, inputs, outputs)
 
     def c_code(self, node, name, inp, out_, sub):
         if len(inp) > 3:
-            bottom, weight, topgrad, bias = inp
+            image, weight, gradz, bias = inp
             weightgrad, biasgrad = out_
         else:
-            bottom, weight, topgrad = inp
+            image, weight, gradz = inp
             bias = None
             weightgrad, = out_
 
@@ -961,10 +961,10 @@ class ConvGradWeights(MKLConvBase):
         else:
             raise ValueError("border_mode must have two elements")
 
-        sub['bottom'] = bottom
+        sub['image'] = image
         sub['weight'] = weight
         sub['weightgrad'] = weightgrad
-        sub['topgrad'] = topgrad
+        sub['gradz'] = gradz
 
         if node.inputs[0].dtype == "float32":
             sub['precision'] = 'F32'
@@ -981,42 +981,42 @@ class ConvGradWeights(MKLConvBase):
         ccode = """
             ////bwdfilter related
             if (NULL == pConvolutionBwdFilter) {
-                convStrides[0] = %(dW)s;
-                convStrides[1] = %(dH)s;
+                convStride[0] = %(dW)s;
+                convStride[1] = %(dH)s;
                 convPadding[0] = -%(padW)s;
                 convPadding[1] = -%(padH)s;
 
-                bottomSize[0] = %(in_w)s;  //w
-                bottomSize[1] = %(in_h)s;  //h
-                bottomSize[2] = %(in_c)s;  //c
-                bottomSize[3] = %(in_n)s;  //n
-                bottomStrides[0] = 1;
-                bottomStrides[1] = bottomSize[0];
-                bottomStrides[2] = bottomSize[0] * bottomSize[1];
-                bottomStrides[3] = bottomSize[0] * bottomSize[1] * bottomSize[2];
+                imageSize[0] = %(in_w)s;  //w
+                imageSize[1] = %(in_h)s;  //h
+                imageSize[2] = %(in_c)s;  //c
+                imageSize[3] = %(in_n)s;  //n
+                imageStride[0] = 1;
+                imageStride[1] = imageSize[0];
+                imageStride[2] = imageSize[0] * imageSize[1];
+                imageStride[3] = imageSize[0] * imageSize[1] * imageSize[2];
 
                 weightSize[0] = %(k_w)s;
                 weightSize[1] = %(k_h)s;
                 weightSize[2] = %(k_c)s;
                 weightSize[3] = %(k_n)s;
                 weightSize[4] = %(grp)s;
-                weightStrides[0] = 1;
-                weightStrides[1] = weightSize[0];
-                weightStrides[2] = weightSize[0] * weightSize[1];
-                weightStrides[3] = weightSize[0] * weightSize[1] * weightSize[2];
-                weightStrides[4] = weightSize[0] * weightSize[1] * weightSize[2] * weightSize[3];
-                topSize[0] = %(o_w)s;
-                topSize[1] = %(o_h)s;
-                topSize[2] = %(o_c)s;
-                topSize[3] = %(o_n)s;
-                topStrides[0] = 1;
-                topStrides[1] = topSize[0];
-                topStrides[2] = topSize[0] * topSize[1];
-                topStrides[3] = topSize[0] * topSize[1] * topSize[2];
+                weightStride[0] = 1;
+                weightStride[1] = weightSize[0];
+                weightStride[2] = weightSize[0] * weightSize[1];
+                weightStride[3] = weightSize[0] * weightSize[1] * weightSize[2];
+                weightStride[4] = weightSize[0] * weightSize[1] * weightSize[2] * weightSize[3];
+                zSize[0] = %(o_w)s;
+                zSize[1] = %(o_h)s;
+                zSize[2] = %(o_c)s;
+                zSize[3] = %(o_n)s;
+                zStride[0] = 1;
+                zStride[1] = zSize[0];
+                zStride[2] = zSize[0] * zSize[1];
+                zStride[3] = zSize[0] * zSize[1] * zSize[2];
 
                 if( %(withBias)s ) {
                     biasSize[0] = %(o_c)s;
-                    biasStrides[0] = 1;
+                    biasStride[0] = 1;
                 }
 
                 groups = %(grp)s;
@@ -1024,21 +1024,21 @@ class ConvGradWeights(MKLConvBase):
 
                 // Create conv backward primitive
                 CHECK_ERR( dnnGroupsConvolutionCreateBackwardFilter_%(precision)s(&pConvolutionBwdFilter, NULL,
-                           dnnAlgorithmConvolutionDirect, groups, dimension, bottomSize,
-                           topSize, weightSize, convStrides, convPadding, dnnBorderZeros), err );
+                           dnnAlgorithmConvolutionDirect, groups, dimension, imageSize,
+                           zSize, weightSize, convStride, convPadding, dnnBorderZeros), err );
             }
-            if (NULL == bwdf_weight_int_layout) {
-                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&bwdf_weight_int_layout,
+            if (NULL == bwdf_weight_internal_layout) {
+                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&bwdf_weight_internal_layout,
                            pConvolutionBwdFilter, dnnResourceDiffFilter), err );
             }
 
-            if (NULL == bottom_int_layout) {
-                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&bottom_int_layout,
+            if (NULL == image_internal_layout) {
+                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&image_internal_layout,
                            pConvolutionBwdFilter, dnnResourceSrc), err );
             }
 
-            if (NULL == topgrad_int_layout_for_weight) {
-                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&topgrad_int_layout_for_weight,
+            if (NULL == gradz_internal_layout_for_weight) {
+                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&gradz_internal_layout_for_weight,
                            pConvolutionBwdFilter, dnnResourceDiffDst), err );
             }
 
@@ -1046,17 +1046,17 @@ class ConvGradWeights(MKLConvBase):
             if (NULL == pConvolutionFwd) {
                 if ( %(withBias)s ) {
                     CHECK_ERR( dnnGroupsConvolutionCreateForwardBias_%(precision)s(&pConvolutionFwd, NULL,
-                               dnnAlgorithmConvolutionDirect, groups, dimension, bottomSize,
-                               topSize, weightSize, convStrides, convPadding, dnnBorderZeros), err );
+                               dnnAlgorithmConvolutionDirect, groups, dimension, imageSize,
+                               zSize, weightSize, convStride, convPadding, dnnBorderZeros), err );
                 } else {
                     CHECK_ERR( dnnGroupsConvolutionCreateForward_%(precision)s(&pConvolutionFwd, NULL,
-                               dnnAlgorithmConvolutionDirect, groups, dimension, bottomSize,
-                               topSize, weightSize, convStrides, convPadding, dnnBorderZeros), err );
+                               dnnAlgorithmConvolutionDirect, groups, dimension, imageSize,
+                               zSize, weightSize, convStride, convPadding, dnnBorderZeros), err );
                 }
             }
 
-            if (NULL == fwd_weight_int_layout) {
-                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&fwd_weight_int_layout,
+            if (NULL == fwd_weight_internal_layout) {
+                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&fwd_weight_internal_layout,
                            pConvolutionFwd, dnnResourceFilter), err );
             }
 
@@ -1064,14 +1064,14 @@ class ConvGradWeights(MKLConvBase):
             if( %(withBias)s ) {
                 if (NULL == pConvolutionBwdBias) {
                     CHECK_ERR ( dnnGroupsConvolutionCreateBackwardBias_%(precision)s(&pConvolutionBwdBias, NULL,
-                                dnnAlgorithmConvolutionDirect, groups, dimension, topSize), err );
+                                dnnAlgorithmConvolutionDirect, groups, dimension, zSize), err );
                 }
-                if (NULL == bias_int_layout) {
-                    CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&bias_int_layout,
+                if (NULL == bias_internal_layout) {
+                    CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&bias_internal_layout,
                                pConvolutionBwdBias, dnnResourceDiffBias), err );
                 }
-                if (NULL == topgrad_int_layout_for_bias) {
-                    CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&topgrad_int_layout_for_bias,
+                if (NULL == gradz_internal_layout_for_bias) {
+                    CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&gradz_internal_layout_for_bias,
                                pConvolutionBwdBias, dnnResourceDiffDst), err );
                 }
             }
@@ -1092,7 +1092,7 @@ class ConvGradWeights(MKLConvBase):
                 }
             }
 
-            weight_buffer_ptr = (%(dtype)s*)PyArray_DATA(%(weightgrad)s);
+            weight_buf = (%(dtype)s*)PyArray_DATA(%(weightgrad)s);
             """ % sub
 
         if bias is not None:
@@ -1110,156 +1110,156 @@ class ConvGradWeights(MKLConvBase):
                 """ % sub
 
             ccode += """
-                bias_buffer_ptr = (%(dtype)s*)PyArray_DATA(%(biasgrad)s);
+                bias_buf = (%(dtype)s*)PyArray_DATA(%(biasgrad)s);
                 """ % sub
 
         ccode += """
             // get internal layout for input from previous Op
-            bottom_int_layout_from_previous = ((dnnLayout_t*)PyArray_DATA(%(bottom)s))[0];
+            image_internal_layout_from_previous = ((dnnLayout_t*)PyArray_DATA(%(image)s))[0];
             // get internal buffer for input from previous op
-            bottom_buffer_ptr_from_previous = ((void **)PyArray_DATA(%(bottom)s))[1];
+            image_buf_from_previous = ((void **)PyArray_DATA(%(image)s))[1];
 
             if (1 == first_run) {
-                if (!dnnLayoutCompare_%(precision)s(bottom_int_layout_from_previous, bottom_int_layout)) {
+                if (!dnnLayoutCompare_%(precision)s(image_internal_layout_from_previous, image_internal_layout)) {
                     #if __DEBUG__
-                        std::cout<<"############gradWeight, bottom layout is not equal" <<std::endl;
+                        std::cout<<"############gradWeight, image layout is not equal" <<std::endl;
                     #endif
-                    if (NULL == convert_int2int_bottom) {
-                        CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_int2int_bottom, bottom_int_layout_from_previous, bottom_int_layout), err );
+                    if (NULL == internal_to_internal_image) {
+                        CHECK_ERR( dnnConversionCreate_%(precision)s(&internal_to_internal_image, image_internal_layout_from_previous, image_internal_layout), err );
                     }
                 }
             }
 
-            if (convert_int2int_bottom) {
-                if (NULL == bottom_buffer_ptr) {
-                    CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&bottom_buffer_ptr, bottom_int_layout), err );
+            if (internal_to_internal_image) {
+                if (NULL == image_buf) {
+                    CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&image_buf, image_internal_layout), err );
                 }
-                CHECK_ERR( dnnConversionExecute_%(precision)s(convert_int2int_bottom, bottom_buffer_ptr_from_previous, bottom_buffer_ptr), err );
-                bottom_int_layout_ptr = &bottom_int_layout;
+                CHECK_ERR( dnnConversionExecute_%(precision)s(internal_to_internal_image, image_buf_from_previous, image_buf), err );
+                image_internal_layout_buf = &image_internal_layout;
             } else {
-                bottom_int_layout_ptr = &bottom_int_layout_from_previous;
-                bottom_buffer_ptr = bottom_buffer_ptr_from_previous;
+                image_internal_layout_buf = &image_internal_layout_from_previous;
+                image_buf = image_buf_from_previous;
             }
 
-            // get internal layout for topgrad from previous Op
-            topgrad_int_layout = ((dnnLayout_t*)PyArray_DATA(%(topgrad)s))[0];
-            // get internal buffer for topgrad from previous op
-            topgrad_buffer_ptr = ((void **)PyArray_DATA(%(topgrad)s))[1];
+            // get internal layout for gradz from previous Op
+            gradz_internal_layout = ((dnnLayout_t*)PyArray_DATA(%(gradz)s))[0];
+            // get internal buffer for gradz from previous op
+            gradz_buf = ((void **)PyArray_DATA(%(gradz)s))[1];
 
             if (1 == first_run) {
-                if (!dnnLayoutCompare_%(precision)s(topgrad_int_layout, topgrad_int_layout_for_weight)) {
+                if (!dnnLayoutCompare_%(precision)s(gradz_internal_layout, gradz_internal_layout_for_weight)) {
                     #if __DEBUG__
-                        std::cout<<"############gradWeight, topgrad layout is not equal for weight" <<std::endl;
+                        std::cout<<"############gradWeight, gradz layout is not equal for weight" <<std::endl;
                     #endif
-                    if (NULL == convert_int2int_topgrad_for_weight) {
-                        CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_int2int_topgrad_for_weight, topgrad_int_layout, topgrad_int_layout_for_weight), err );
+                    if (NULL == internal_to_internal_gradz_for_weight) {
+                        CHECK_ERR( dnnConversionCreate_%(precision)s(&internal_to_internal_gradz_for_weight, gradz_internal_layout, gradz_internal_layout_for_weight), err );
                     }
                 }
             }
-            if (convert_int2int_topgrad_for_weight) {
-                if (NULL == topgrad_buffer_ptr_for_weight) {
-                    CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&topgrad_buffer_ptr_for_weight, topgrad_int_layout_for_weight), err );
+            if (internal_to_internal_gradz_for_weight) {
+                if (NULL == gradz_buf_for_weight) {
+                    CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&gradz_buf_for_weight, gradz_internal_layout_for_weight), err );
                 }
-                CHECK_ERR( dnnConversionExecute_%(precision)s(convert_int2int_topgrad_for_weight, topgrad_buffer_ptr, topgrad_buffer_ptr_for_weight), err );
+                CHECK_ERR( dnnConversionExecute_%(precision)s(internal_to_internal_gradz_for_weight, gradz_buf, gradz_buf_for_weight), err );
             } else {
-                topgrad_buffer_ptr_for_weight = topgrad_buffer_ptr;
+                gradz_buf_for_weight = gradz_buf;
             }
 
-            conv_res[dnnResourceSrc] = bottom_buffer_ptr;
-            conv_res[dnnResourceDiffDst] = topgrad_buffer_ptr_for_weight;
+            conv_res[dnnResourceSrc] = image_buf;
+            conv_res[dnnResourceDiffDst] = gradz_buf_for_weight;
 
             if (%(withBias)s) {
                 if (1 == first_run) {
-                    if (!dnnLayoutCompare_%(precision)s(topgrad_int_layout, topgrad_int_layout_for_bias)) {
+                    if (!dnnLayoutCompare_%(precision)s(gradz_internal_layout, gradz_internal_layout_for_bias)) {
                         #if __DEBUG__
-                            std::cout<<"############gradWeight, topgrad layout is not equal for bias" <<std::endl;
+                            std::cout<<"############gradWeight, gradz layout is not equal for bias" <<std::endl;
                         #endif
-                        if (NULL == convert_int2int_topgrad_for_bias) {
-                            CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_int2int_topgrad_for_bias, topgrad_int_layout, topgrad_int_layout_for_bias), err );
+                        if (NULL == internal_to_internal_gradz_bias) {
+                            CHECK_ERR( dnnConversionCreate_%(precision)s(&internal_to_internal_gradz_bias, gradz_internal_layout, gradz_internal_layout_for_bias), err );
                         }
                     }
                 }
-                if (convert_int2int_topgrad_for_bias) {
-                    if (NULL == topgrad_buffer_ptr_for_bias) {
-                        CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&topgrad_buffer_ptr_for_bias, topgrad_int_layout_for_bias), err );
+                if (internal_to_internal_gradz_bias) {
+                    if (NULL == gradz_buf_for_bias) {
+                        CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&gradz_buf_for_bias, gradz_internal_layout_for_bias), err );
                     }
-                    CHECK_ERR( dnnConversionExecute_%(precision)s(convert_int2int_topgrad_for_bias, topgrad_buffer_ptr, topgrad_buffer_ptr_for_bias), err );
+                    CHECK_ERR( dnnConversionExecute_%(precision)s(internal_to_internal_gradz_bias, gradz_buf, gradz_buf_for_bias), err );
                 } else {
-                    topgrad_buffer_ptr_for_bias = topgrad_buffer_ptr;
+                    gradz_buf_for_bias = gradz_buf;
                 }
             }
 
             //Allocate internal buffer for weightgrad data
-            if (NULL == weight_buffer_tmp_ptr) {
-                CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&weight_buffer_tmp_ptr, bwdf_weight_int_layout), err );
+            if (NULL == weight_buf_tmp) {
+                CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&weight_buf_tmp, bwdf_weight_internal_layout), err );
             }
-            conv_res[dnnResourceDiffFilter] = weight_buffer_tmp_ptr;
+            conv_res[dnnResourceDiffFilter] = weight_buf_tmp;
 
             //Execute convolution gradweight pass
             CHECK_ERR( dnnExecute_%(precision)s(pConvolutionBwdFilter, (void**)conv_res), err );
 
             if (%(withBias)s) {
-                conv_res_bias[dnnResourceDiffDst] = topgrad_buffer_ptr_for_bias;
-                conv_res_bias[dnnResourceDiffBias] = bias_buffer_ptr;
+                conv_res_bias[dnnResourceDiffDst] = gradz_buf_for_bias;
+                conv_res_bias[dnnResourceDiffBias] = bias_buf;
 
                 //Execute convolution gradbias pass
                 CHECK_ERR( dnnExecute_%(precision)s(pConvolutionBwdBias, (void**)conv_res_bias), err );
             }
 
             //weight bwd -> fwd cvt
-            if(!dnnLayoutCompare_%(precision)s(bwdf_weight_int_layout, fwd_weight_int_layout)) {
+            if(!dnnLayoutCompare_%(precision)s(bwdf_weight_internal_layout, fwd_weight_internal_layout)) {
                 #if __DEBUG__
-                    std::cout<<"############gradWeight, bwdf_weight_int_layout is not equal to fwd_weight_int_layout" <<std::endl;
+                    std::cout<<"############gradWeight, bwdf_weight_internal_layout is not equal to fwd_weight_internal_layout" <<std::endl;
                 #endif
-                if (NULL == bwdf_convert_weight_to_fwd_int) {
-                    CHECK_ERR( dnnConversionCreate_%(precision)s(&bwdf_convert_weight_to_fwd_int, bwdf_weight_int_layout, fwd_weight_int_layout), err );
+                if (NULL == bwdf_weight_to_fwd_internal) {
+                    CHECK_ERR( dnnConversionCreate_%(precision)s(&bwdf_weight_to_fwd_internal, bwdf_weight_internal_layout, fwd_weight_internal_layout), err );
                 }
             }
 
             #if __SUPPORT_USER_PARAMS__
                 if(NULL == weight_usr_layout) {
-                    dnnLayoutCreate_%(precision)s(&weight_usr_layout, fdimension, weightSize, weightStrides);
-                    //printf(\"gradweight, weightstride: %%d, %%d, %%d, %%d\\n\", weightStrides[0], weightStrides[1], weightStrides[2], weightStrides[3]);
+                    dnnLayoutCreate_%(precision)s(&weight_usr_layout, fdimension, weightSize, weightStride);
+                    //printf(\"gradweight, weightstride: %%d, %%d, %%d, %%d\\n\", weightStride[0], weightStride[1], weightStride[2], weightStride[3]);
                 }
 
                 if(%(withBias)s && NULL == bias_usr_layout) {
-                    dnnLayoutCreate_%(precision)s(&bias_usr_layout, 1, biasSize, biasStrides);
+                    dnnLayoutCreate_%(precision)s(&bias_usr_layout, 1, biasSize, biasStride);
                 }
 
-                if (bwdf_convert_weight_to_fwd_int) {
-                    if (NULL == bwdf2fwd_weight_buffer_ptr) {
-                        CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&bwdf2fwd_weight_buffer_ptr, fwd_weight_int_layout), err );
+                if (bwdf_weight_to_fwd_internal) {
+                    if (NULL == bwdf2fwd_weight_buf) {
+                        CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&bwdf2fwd_weight_buf, fwd_weight_internal_layout), err );
                     }
-                    CHECK_ERR( dnnConversionExecute_%(precision)s(bwdf_convert_weight_to_fwd_int, weight_buffer_tmp_ptr, bwdf2fwd_weight_buffer_ptr), err );
+                    CHECK_ERR( dnnConversionExecute_%(precision)s(bwdf_weight_to_fwd_internal, weight_buf_tmp, bwdf2fwd_weight_buf), err );
                 } else {
-                    bwdf2fwd_weight_buffer_ptr = weight_buffer_tmp_ptr;
+                    bwdf2fwd_weight_buf = weight_buf_tmp;
                 }
 
-                if (NULL == bwdf_convert_wegith_to_usr) {
-                    CHECK_ERR( dnnConversionCreate_%(precision)s(&bwdf_convert_wegith_to_usr, fwd_weight_int_layout, weight_usr_layout), err );
+                if (NULL == bwdf_wegith_to_usr) {
+                    CHECK_ERR( dnnConversionCreate_%(precision)s(&bwdf_wegith_to_usr, fwd_weight_internal_layout, weight_usr_layout), err );
                 }
-                dnnConversionExecute_%(precision)s(bwdf_convert_wegith_to_usr, bwdf2fwd_weight_buffer_ptr, weight_buffer_ptr);
+                dnnConversionExecute_%(precision)s(bwdf_wegith_to_usr, bwdf2fwd_weight_buf, weight_buf);
 
                 //no need to do conversion for bias
                 if (%(withBias)s) {
-                    if(NULL == bias_buffer_tmp_ptr) {
-                        dnnAllocateBuffer_%(precision)s((void**)&bias_buffer_tmp_ptr, bias_usr_layout);
+                    if(NULL == bias_buf_tmp) {
+                        dnnAllocateBuffer_%(precision)s((void**)&bias_buf_tmp, bias_usr_layout);
                     }
-                    if(NULL == convert_bias_from_int) {
-                         dnnConversionCreate_%(precision)s(&convert_bias_from_int, bias_int_layout, bias_usr_layout);
+                    if(NULL == bias_from_internal) {
+                         dnnConversionCreate_%(precision)s(&bias_from_internal, bias_internal_layout, bias_usr_layout);
                     }
-                    dnnConversionExecute_%(precision)s(convert_bias_from_int, bias_buffer_ptr, bias_buffer_tmp_ptr);
-                    memcpy(bias_buffer_ptr, bias_buffer_tmp_ptr, dnnLayoutGetMemorySize_%(precision)s(bias_usr_layout));
+                    dnnConversionExecute_%(precision)s(bias_from_internal, bias_buf, bias_buf_tmp);
+                    memcpy(bias_buf, bias_buf_tmp, dnnLayoutGetMemorySize_%(precision)s(bias_usr_layout));
                 }
             #else
-                if (bwdf_convert_weight_to_fwd_int) {
-                    if (NULL == bwdf2fwd_weight_buffer_ptr) {
-                        CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&bwdf2fwd_weight_buffer_ptr, fwd_weight_int_layout), err );
+                if (bwdf_weight_to_fwd_internal) {
+                    if (NULL == bwdf2fwd_weight_buf) {
+                        CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&bwdf2fwd_weight_buf, fwd_weight_internal_layout), err );
                     }
-                    CHECK_ERR( dnnConversionExecute_%(precision)s(bwdf_convert_weight_to_fwd_int, weight_buffer_tmp_ptr, weight_buffer_ptr), err );
+                    CHECK_ERR( dnnConversionExecute_%(precision)s(bwdf_weight_to_fwd_internal, weight_buf_tmp, weight_buf), err );
                 }
                 else {
-                    memcpy(weight_buffer_ptr, weight_buffer_tmp_ptr, dnnLayoutGetMemorySize_%(precision)s(fwd_weight_int_layout));
+                    memcpy(weight_buf, weight_buf_tmp, dnnLayoutGetMemorySize_%(precision)s(fwd_weight_internal_layout));
                 }
             #endif  //__SUPPORT_USER_PARAMS__
 

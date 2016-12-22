@@ -74,6 +74,8 @@ def mkl_version():
                             profile=False)
         mkl_version.v = f()
     return mkl_version.v
+
+
 mkl_version.v = None
 
 

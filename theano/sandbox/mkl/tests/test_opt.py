@@ -472,11 +472,10 @@ def test_mkl_elemwise_sum_forward():
     topo = f.maker.fgraph.toposort()
     # inputs = f.maker.fgraph.inputs
     # outputs = f.maker.fgraph.outputs
-    assert len(topo) == 10
-    assert isinstance(topo[6].op, basic_ops.U2IElemwiseSum)
-    assert isinstance(topo[7].op, basic_ops.U2IElemwiseSum)
-    assert isinstance(topo[8].op, mkl_elemwise.ElemwiseSum)
-    assert isinstance(topo[9].op, basic_ops.I2U)
+    assert len(topo) == 6 
+    theano.printing.pydotprint(f, outfile="mkl_elemwise_sum_opt.png",  var_with_name_simple=True)
+    assert isinstance(topo[4].op, mkl_elemwise.ElemwiseSum)
+    assert isinstance(topo[5].op, basic_ops.I2U)
     
     imval = numpy.random.rand(4, 2 ,4, 4).astype(numpy.float32)
     f(imval)
@@ -496,10 +495,8 @@ def test_mkl_elemwise_sum_backward():
     inputs = f.maker.fgraph.inputs
     outputs = f.maker.fgraph.outputs
     
-    assert len(topo) == 29
-    assert isinstance(topo[22].op, basic_ops.U2IElemwiseSum)
-    assert isinstance(topo[23].op, basic_ops.U2IElemwiseSum)
-    assert isinstance(topo[24].op, mkl_elemwise.ElemwiseSum)
+    #assert len(topo.op) == 18
+    assert isinstance(topo[4].op, mkl_elemwise.ElemwiseSum)
 
     imval = numpy.random.rand(4, 2, 4, 4).astype(numpy.float32)
     f(imval)

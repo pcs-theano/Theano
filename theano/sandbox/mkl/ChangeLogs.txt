@@ -1,4 +1,13 @@
 Date: 2016/12/22
+Author: Patric
+Changes:
+----------------------------------
+1. code clear and change variable's name
+2. cut LRN/ElemwiseSum
+3. Conv, group=2
+
+
+Date: 2016/12/22
 Author: Ciyong
 Changes:
 ----------------------------------

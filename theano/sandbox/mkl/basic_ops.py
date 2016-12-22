@@ -40,10 +40,10 @@ class MKLOp(Op):
             static int first_run = 1;
             static void* internal_ptr = NULL;
             static void* usr_ptr = NULL;
-            static dnnLayout_t layout_int = NULL;
+            static dnnLayout_t layout_internal = NULL;
             static dnnLayout_t layout_usr = NULL;
-            static dnnPrimitive_t convert_to_int = NULL;
-            static dnnPrimitive_t convert_from_int = NULL;
+            static dnnPrimitive_t to_internal = NULL;
+            static dnnPrimitive_t from_internal = NULL;
             static dnnPrimitive_t primitive = NULL;
             void *convert_resources[dnnResourceNumber];
             size_t bottomSize[DIMENSION] = {0};
@@ -154,11 +154,11 @@ class U2IPool(MKLOp):
                            layout_usr, kernelSize, kernelStride, inputOffset, dnnBorderZeros), err );
 
                 //create internal layout
-                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_int, primitive, dnnResourceSrc), err );
+                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_internal, primitive, dnnResourceSrc), err );
 
-                if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_int)) {
-                    if(NULL == convert_to_int) {
-                        CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_to_int, layout_usr, layout_int), err );
+                if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_internal)) {
+                    if(NULL == to_internal) {
+                        CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_usr, layout_internal), err );
                     }
                 }
             }
@@ -173,21 +173,21 @@ class U2IPool(MKLOp):
                 }
 
                 if (NULL == internal_ptr) {
-                    CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&internal_ptr, layout_int), err );
+                    CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&internal_ptr, layout_internal), err );
                 }
             }
 
-            if (convert_to_int) {
+            if (to_internal) {
                 convert_resources[dnnResourceFrom] = (PyArray_DATA(%(x)s));
                 convert_resources[dnnResourceTo] = (void *)(internal_ptr);
 
-                CHECK_ERR( dnnExecute_%(precision)s(convert_to_int, convert_resources), err );
+                CHECK_ERR( dnnExecute_%(precision)s(to_internal, convert_resources), err );
             } else {
                 internal_ptr = (PyArray_DATA(%(x)s));
             }
 
-            if(layout_int != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
-                ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_int;
+            if(layout_internal != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
+                ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_internal;
             if(internal_ptr != ((void**)PyArray_DATA(%(z)s))[1])
                 ((void**)PyArray_DATA(%(z)s))[1] = internal_ptr;
 
@@ -295,10 +295,10 @@ class I2U(MKLOp):
                 free(out_stride);
 
                 //Get layerout and internal buffer from input.
-                layout_int = ((dnnLayout_t*)PyArray_DATA(%(x)s))[0];
+                layout_internal = ((dnnLayout_t*)PyArray_DATA(%(x)s))[0];
                 internal_ptr = ((void**)PyArray_DATA(%(x)s))[1];
 
-                CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_from_int, layout_int, layout_usr), err );
+                CHECK_ERR( dnnConversionCreate_%(precision)s(&from_internal, layout_internal, layout_usr), err );
             }
 
             //FIXME, compare internal and user layout, then decides whether to do the conversion
@@ -307,7 +307,7 @@ class I2U(MKLOp):
             convert_resources[dnnResourceFrom] = reinterpret_cast<void *>(internal_ptr);
 
             //cvt
-            CHECK_ERR( dnnExecute_%(precision)s(convert_from_int, convert_resources), err );
+            CHECK_ERR( dnnExecute_%(precision)s(from_internal, convert_resources), err );
         """ % locals()
 
         return ccode
@@ -390,11 +390,11 @@ class U2IRelu(MKLOp):
                 CHECK_ERR( dnnReLUCreateForward_%(precision)s(&primitive, NULL, layout_usr, %(slope)s), err );
 
                 //create internal layout
-                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_int, primitive, dnnResourceSrc), err );
+                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_internal, primitive, dnnResourceSrc), err );
 
-                if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_int)) {
-                    if(NULL == convert_to_int) {
-                        CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_to_int, layout_usr, layout_int), err );
+                if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_internal)) {
+                    if(NULL == to_internal) {
+                        CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_usr, layout_internal), err );
                     }
                 }
             }
@@ -409,21 +409,21 @@ class U2IRelu(MKLOp):
                 }
 
                 if (NULL == internal_ptr) {
-                    CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&internal_ptr, layout_int), err );
+                    CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&internal_ptr, layout_internal), err );
                 }
             }
 
-            if (convert_to_int) {
+            if (to_internal) {
                 convert_resources[dnnResourceFrom] = PyArray_DATA(%(x)s);
                 convert_resources[dnnResourceTo] = (void *)(internal_ptr);
 
-                CHECK_ERR( dnnExecute_%(precision)s(convert_to_int, convert_resources), err );
+                CHECK_ERR( dnnExecute_%(precision)s(to_internal, convert_resources), err );
             } else {
                 internal_ptr = (PyArray_DATA(%(x)s));
             }
 
-            if(layout_int != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
-                ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_int;
+            if(layout_internal != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
+                ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_internal;
             if(internal_ptr != ((void**)PyArray_DATA(%(z)s))[1])
                 ((void**)PyArray_DATA(%(z)s))[1] = internal_ptr;
 
@@ -495,14 +495,14 @@ class U2IGrad(MKLOp):
                   usr_ptr = NULL;
               }
 
-              if(NULL != convert_from_int)
+              if(NULL != from_internal)
               {
-                  status = dnnDelete_%(precision)s(convert_from_int);
+                  status = dnnDelete_%(precision)s(from_internal);
                   if(0 != status)
                   {
-                       printf(\"\\nERROR:dnnDelete_%(precision)s convert_to_int\\n\");
+                       printf(\"\\nERROR:dnnDelete_%(precision)s to_internal\\n\");
                   }
-                  convert_from_int = NULL;
+                  from_internal = NULL;
               }
 
               if(NULL != layout_usr)
@@ -578,10 +578,10 @@ class U2IGrad(MKLOp):
               free(out_stride);
 
               //Get layerout buffer from input.
-              layout_int = ((dnnLayout_t*)PyArray_DATA(%(gz)s))[0]; //get internal layerout
+              layout_internal = ((dnnLayout_t*)PyArray_DATA(%(gz)s))[0]; //get internal layerout
               internal_ptr = ((void **)PyArray_DATA(%(gz)s))[1];
 
-              status = dnnConversionCreate_%(precision)s(&convert_from_int, layout_int, layout_usr);
+              status = dnnConversionCreate_%(precision)s(&from_internal, layout_internal, layout_usr);
               if(0 != status)
               {
                      printf(\"ERROR:dnnConversionCreate_%(precision)s\\n\");
@@ -592,14 +592,14 @@ class U2IGrad(MKLOp):
         convert_resources[dnnResourceFrom] = internal_ptr;
         convert_resources[dnnResourceTo] = (void*)PyArray_DATA(%(z)s);
         #ifdef _MKL_DEBUG_
-            printf(\"%%x, %%x , %%x to %%x\\n\",convert_from_int,layout_int,internal_ptr,convert_resources[dnnResourceTo]);
+            printf(\"%%x, %%x , %%x to %%x\\n\",from_internal,layout_internal,internal_ptr,convert_resources[dnnResourceTo]);
         #endif
 
         //cvt
-        status = dnnExecute_%(precision)s(convert_from_int, convert_resources);
+        status = dnnExecute_%(precision)s(from_internal, convert_resources);
         if(0 != status)
         {
-                printf(\"ERROR:U2IGrad:%%x, %%x, %%x, status: %%d\\n\",convert_from_int,convert_resources[dnnResourceFrom],convert_resources[dnnResourceTo],status);
+                printf(\"ERROR:U2IGrad:%%x, %%x, %%x, status: %%d\\n\",from_internal,convert_resources[dnnResourceFrom],convert_resources[dnnResourceTo],status);
                 exit(0);
         }
         """ % sub
@@ -656,14 +656,14 @@ class I2UGrad(MKLOp):
        #ifdef _DEBUG_
               printf(\"I2UGrad CleanUp\\n\");
        #endif
-              if(NULL != convert_to_int)
+              if(NULL != to_internal)
               {
-                    int status = dnnDelete_%(precision)s(convert_to_int);
+                    int status = dnnDelete_%(precision)s(to_internal);
                     if(0 != status)
                     {
-                          printf(\"\\nERROR:dnnDelete_%(precision)s convert_to_int\\n\");
+                          printf(\"\\nERROR:dnnDelete_%(precision)s to_internal\\n\");
                     }
-                    convert_to_int = NULL;
+                    to_internal = NULL;
               }
 
               if(NULL != internal_ptr)
@@ -759,14 +759,14 @@ class I2UGrad(MKLOp):
              free(bottom_size);
              free(out_stride);
 
-             layout_int = ((dnnLayout_t*)PyArray_DATA(%(x)s))[0]; //get internal layerout
+             layout_internal = ((dnnLayout_t*)PyArray_DATA(%(x)s))[0]; //get internal layerout
 
              //create internal buffer for gradI
              if(NULL == internal_ptr)
              {
                        status = dnnAllocateBuffer_%(precision)s(
                                          reinterpret_cast<void **>(&internal_ptr),
-                                         layout_int);
+                                         layout_internal);
                        if(0 != status)
                        {
                                printf(\"ERROR:dnnAllocateBuffer_%(precision)s : %%d \\n\", status);
@@ -774,14 +774,14 @@ class I2UGrad(MKLOp):
                        }
               }
 
-              if(dnnLayoutGetMemorySize_%(precision)s(layout_usr) != dnnLayoutGetMemorySize_%(precision)s(layout_int))
+              if(dnnLayoutGetMemorySize_%(precision)s(layout_usr) != dnnLayoutGetMemorySize_%(precision)s(layout_internal))
               {
                             printf(\"ERROR:I2UGrad: usr space: %%d not equal to internal:%%d\\n\",
-                                            dnnLayoutGetMemorySize_%(precision)s(layout_usr), dnnLayoutGetMemorySize_%(precision)s(layout_int));
+                                            dnnLayoutGetMemorySize_%(precision)s(layout_usr), dnnLayoutGetMemorySize_%(precision)s(layout_internal));
                             exit(0);
               }
 
-              status = dnnConversionCreate_%(precision)s(&convert_to_int, layout_usr, layout_int);
+              status = dnnConversionCreate_%(precision)s(&to_internal, layout_usr, layout_internal);
               if(0 != status)
               {
                     printf(\"ERROR: dnnConversionCreate_%(precision)s in I2UGrad\\n\");
@@ -789,27 +789,27 @@ class I2UGrad(MKLOp):
               }
 
               ((void**)PyArray_DATA(%(z)s))[1] = internal_ptr;
-              ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_int;
+              ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_internal;
       }
 
       convert_resources[dnnResourceTo] = reinterpret_cast<void *>(internal_ptr);
       convert_resources[dnnResourceFrom] = reinterpret_cast<void *>(PyArray_DATA(%(gz)s));
 
   #ifdef _DEBUG_
-      printf(\"I2UGrad:%%x, %%x, %%x to %%x\\n\",convert_to_int,layout_int,convert_resources[dnnResourceFrom],convert_resources[dnnResourceTo]);
+      printf(\"I2UGrad:%%x, %%x, %%x to %%x\\n\",to_internal,layout_internal,convert_resources[dnnResourceFrom],convert_resources[dnnResourceTo]);
       printf(\"I2UGrad x: %%d,%%d,%%d,%%d\\n\",PyArray_DIMS(%(x)s)[0],PyArray_DIMS(%(x)s)[1],PyArray_DIMS(%(x)s)[2],PyArray_DIMS(%(x)s)[3]);
       printf(\"I2UGrad gz: %%d,%%d,%%d,%%d\\n\",PyArray_DIMS(%(gz)s)[0],PyArray_DIMS(%(gz)s)[1],PyArray_DIMS(%(gz)s)[2],PyArray_DIMS(%(gz)s)[3]);
   #endif
 
-      if(dnnLayoutGetMemorySize_%(precision)s(layout_int) != PyArray_DIMS(%(z)s)[0] * PyArray_STRIDES(%(z)s)[0])
+      if(dnnLayoutGetMemorySize_%(precision)s(layout_internal) != PyArray_DIMS(%(z)s)[0] * PyArray_STRIDES(%(z)s)[0])
       {
-            printf(\"I2UGrad int %%d != usr: %%d\\n\",dnnLayoutGetMemorySize_%(precision)s(layout_int),PyArray_DIMS(%(z)s)[0]*PyArray_STRIDES(%(z)s)[0]);
+            printf(\"I2UGrad int %%d != usr: %%d\\n\",dnnLayoutGetMemorySize_%(precision)s(layout_internal),PyArray_DIMS(%(z)s)[0]*PyArray_STRIDES(%(z)s)[0]);
             printf(\"I2UGrad gz: %%d,%%d,%%d,%%d\\n\",PyArray_DIMS(%(gz)s)[0],PyArray_DIMS(%(gz)s)[1],PyArray_DIMS(%(gz)s)[2],PyArray_DIMS(%(gz)s)[3]);
             printf(\"I2UGrad x: %%d,%%d,%%d,%%d\\n\",PyArray_DIMS(%(x)s)[0],PyArray_DIMS(%(x)s)[1],PyArray_DIMS(%(x)s)[2],PyArray_DIMS(%(x)s)[3]);
       }
 
       //cvt
-      status = dnnExecute_%(precision)s(convert_to_int, convert_resources);
+      status = dnnExecute_%(precision)s(to_internal, convert_resources);
       if(0 != status)
       {
                 printf(\"ERROR:dnnExecute_%(precision)s\\n\");
@@ -898,13 +898,13 @@ class U2ILRN(MKLOp):
                 //create user layout
                 CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_usr, DIMENSION, bottomSize, bottomStride), err );
                 CHECK_ERR( dnnLRNCreateForward_%(precision)s(&primitive, NULL, layout_usr, %(size)s, %(alpha)s, %(beta)s, %(k)s), err );
-                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_int, primitive, dnnResourceSrc), err );
+                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_internal, primitive, dnnResourceSrc), err );
 
-                if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_int))
+                if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_internal))
                 {
-                    if (NULL == convert_to_int)
+                    if (NULL == to_internal)
                     {
-                        CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_to_int, layout_usr, layout_int), err );
+                        CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_usr, layout_internal), err );
                     }
                 }
             }
@@ -921,24 +921,24 @@ class U2ILRN(MKLOp):
 
                 if (NULL == internal_ptr)
                 {
-                    CHECK_ERR(  dnnAllocateBuffer_%(precision)s((void**)&internal_ptr, layout_int), err );
+                    CHECK_ERR(  dnnAllocateBuffer_%(precision)s((void**)&internal_ptr, layout_internal), err );
                 }
             }
 
-            if (convert_to_int)
+            if (to_internal)
             {
                 convert_resources[dnnResourceFrom] = (PyArray_DATA(%(x)s));
                 convert_resources[dnnResourceTo] = (void*)(internal_ptr);
-                CHECK_ERR( dnnExecute_%(precision)s(convert_to_int, convert_resources), err );
+                CHECK_ERR( dnnExecute_%(precision)s(to_internal, convert_resources), err );
             }
             else
             {
                 internal_ptr = (PyArray_DATA(%(x)s));
             }
 
-            if (layout_int != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
+            if (layout_internal != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
             {
-                ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_int;
+                ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_internal;
             }
 
             if (internal_ptr != ((void**)PyArray_DATA(%(z)s))[1])
@@ -956,7 +956,7 @@ class U2ILRN(MKLOp):
 
 
 class U2IConv(MKLOp):
-    __props__ = ('imshp', 'kshp', 'border_mode', 'subsample', 'filter_dilation', 'uniq_id')
+    __props__ = ('imshp', 'kshp', 'border_mode', 'subsample', 'filter_dilation')
 
     def __init__(self, imshp=None, kshp=None, border_mode='valid', subsample=(1, 1), filter_dilation=(1, 1), uniq_id=0):
         super(U2IConv, self).__init__(uniq_id)
@@ -1000,25 +1000,25 @@ class U2IConv(MKLOp):
 
     def c_code(self, node, name, inp, out, sub):
         x, = inp
-        dH, dW = node.op.subsample
+        dH, dW = self.subsample
 
         grp = 1
 
-        i_n, i_c, i_h, i_w = node.op.imshp
-        k_n, k_c, k_h, k_w = node.op.kshp
-        o_n, o_c, o_h, o_w = get_conv_output_shape(image_shape=node.op.imshp,
-                                                   kernel_shape=node.op.kshp,
-                                                   border_mode=node.op.border_mode,
-                                                   filter_dilation=node.op.filter_dilation,
-                                                   subsample=node.op.subsample)
+        i_n, i_c, i_h, i_w = self.imshp
+        k_n, k_c, k_h, k_w = self.kshp
+        o_n, o_c, o_h, o_w = get_conv_output_shape(image_shape=self.imshp,
+                                                   kernel_shape=self.kshp,
+                                                   border_mode=self.border_mode,
+                                                   filter_dilation=self.filter_dilation,
+                                                   subsample=self.subsample)
 
-        if node.op.border_mode == 'valid':
+        if self.border_mode == 'valid':
             padH, padW = (0, 0)
-        elif node.op.border_mode == 'full':
+        elif self.border_mode == 'full':
             padH, padW = ((k_h - 1), (k_w - 1))
-        elif node.op.border_mode == 'half':
+        elif self.border_mode == 'half':
             padH, padW = ((k_h / 2), (k_w / 2))
-        elif isinstance(node.op.border_mode, tuple):
+        elif isinstance(self.border_mode, tuple):
             padH, padW = self.border_mode
         else:
             raise ValueError("border_mode must have two elements")
@@ -1059,7 +1059,6 @@ class U2IConv(MKLOp):
             weightStrides[1] = weightSize[0];
             weightStrides[2] = weightSize[0] * weightSize[1];
             weightStrides[3] = weightSize[0] * weightSize[1] * weightSize[2];
-            weightStrides[4] = weightSize[0] * weightSize[1] * weightSize[2] * weightSize[3];
 
             topSize[0] = %(o_w)s;
             topSize[1] = %(o_h)s;
@@ -1075,13 +1074,13 @@ class U2IConv(MKLOp):
             //create user layout
             CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_usr, DIMENSION, bottomSize, bottomStride), err );
             CHECK_ERR( dnnGroupsConvolutionCreateForward_%(precision)s(&primitive, NULL, dnnAlgorithmConvolutionDirect, group, DIMENSION, bottomSize, topSize, weightSize, convStrides, convPadding, dnnBorderZeros), err );
-            CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_int, primitive, dnnResourceSrc), err );
+            CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_internal, primitive, dnnResourceSrc), err );
 
-            if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_int))
+            if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_internal))
             {
-                if (NULL == convert_to_int)
+                if (NULL == to_internal)
                 {
-                    CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_to_int, layout_usr, layout_int), err );
+                    CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_usr, layout_internal), err );
                 }
             }
 
@@ -1098,30 +1097,30 @@ class U2IConv(MKLOp):
 
             if (NULL == internal_ptr)
             {
-                CHECK_ERR(  dnnAllocateBuffer_%(precision)s((void**)&internal_ptr, layout_int), err );
+                CHECK_ERR(  dnnAllocateBuffer_%(precision)s((void**)&internal_ptr, layout_internal), err );
             }
 
-            if (convert_to_int)
+            if (to_internal)
             {
                 convert_resources[dnnResourceFrom] = (PyArray_DATA(%(x)s));
                 convert_resources[dnnResourceTo] = (void*)(internal_ptr);
-                CHECK_ERR( dnnExecute_%(precision)s(convert_to_int, convert_resources), err );
+                CHECK_ERR( dnnExecute_%(precision)s(to_internal, convert_resources), err );
             }
             else
             {
                 internal_ptr = (PyArray_DATA(%(x)s));
             }
 
-            if (layout_int != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
+            if (layout_internal != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
             {
-                ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_int;
+                ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_internal;
             }
             if (internal_ptr != ((void**)PyArray_DATA(%(z)s))[1])
             {
                 ((void**)PyArray_DATA(%(z)s))[1] = internal_ptr;
             }
 
-            #ifdef __DEBUG__
+            #ifdef _MKL_DEBUG_
             printf(\"U2I_Conv: from_buffer %%x to_buffer %%x\\n\", convert_resources[dnnResouceFrom], convert_resources[dnnResourceTo]);
             #endif
         """ % locals()
@@ -1196,13 +1195,13 @@ class U2IElemwiseSum(MKLOp):
                 //create user layout
                 CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_usr, DIMENSION, bottomSize, bottomStride), err );
                 CHECK_ERR( dnnSumCreate_%(precision)s(&primitive, NULL, %(inp_num)s, layout_usr, coeffs), err);
-                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_int, primitive, dnnResourceMultipleSrc), err );
+                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_internal, primitive, dnnResourceMultipleSrc), err );
 
-                if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_int))
+                if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_internal))
                 {
-                    if (NULL == convert_to_int)
+                    if (NULL == to_internal)
                     {
-                        CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_to_int, layout_usr, layout_int), err );
+                        CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_usr, layout_internal), err );
                     }
                 }
             }
@@ -1218,23 +1217,23 @@ class U2IElemwiseSum(MKLOp):
 
                 if (NULL == internal_ptr)
                 {
-                    CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&internal_ptr, layout_int), err );
+                    CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&internal_ptr, layout_internal), err );
                 }
             }
 
-            if (convert_to_int)
+            if (to_internal)
             {
                 convert_resources[dnnResourceFrom] = (PyArray_DATA(%(x)s));
                 convert_resources[dnnResourceTo] = (void*)(internal_ptr);
-                CHECK_ERR( dnnExecute_%(precision)s(convert_to_int, convert_resources), err );
+                CHECK_ERR( dnnExecute_%(precision)s(to_internal, convert_resources), err );
             }
             else
             {
                 internal_ptr = (PyArray_DATA(%(x)s));
             }
-            if (layout_int != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
+            if (layout_internal != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
             {
-                ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_int;
+                ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_internal;
             }
             if (internal_ptr != ((void**)PyArray_DATA(%(z)s))[1])
             {
@@ -1242,7 +1241,7 @@ class U2IElemwiseSum(MKLOp):
             }
 
             first_run = 0;
-            #ifdef __DEBUG__
+            #ifdef _MKL_DEBUG_
                 printf(\"U2IElemwiseSum: From buffer %%x to buffer %%x\\n\", convert_resources[dnnResouceFrom], convert_resources[dnnResourceTo]);
             #endif
         """ % locals()
@@ -1296,13 +1295,13 @@ class U2IBatchNormalization(MKLOp):
                 //create user layout
                 CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_usr, DIMENSION, bottomSize, bottomStride), err );
                 CHECK_ERR( dnnBatchNormalizationCreateForward_%(precision)s(&primitive, NULL, layout_usr, %(eps)s), err);
-                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_int, primitive, dnnResourceSrc), err );
+                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_internal, primitive, dnnResourceSrc), err );
 
-                if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_int))
+                if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_internal))
                 {
-                    if (NULL == convert_to_int)
+                    if (NULL == to_internal)
                     {
-                        CHECK_ERR( dnnConversionCreate_%(precision)s(&convert_to_int, layout_usr, layout_int), err );
+                        CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_usr, layout_internal), err );
                     }
                 }
             }
@@ -1319,23 +1318,23 @@ class U2IBatchNormalization(MKLOp):
 
                 if (NULL == internal_ptr)
                 {
-                    CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&internal_ptr, layout_int), err );
+                    CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&internal_ptr, layout_internal), err );
                 }
             }
 
-            if (convert_to_int)
+            if (to_internal)
             {
                 convert_resources[dnnResourceFrom] = (PyArray_DATA(%(x)s));
                 convert_resources[dnnResourceTo] = (void*)(internal_ptr);
-                CHECK_ERR( dnnExecute_%(precision)s(convert_to_int, convert_resources), err );
+                CHECK_ERR( dnnExecute_%(precision)s(to_internal, convert_resources), err );
             }
             else
             {
                 internal_ptr = (PyArray_DATA(%(x)s));
             }
-            if (layout_int != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
+            if (layout_internal != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
             {
-                ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_int;
+                ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_internal;
             }
             if (internal_ptr != ((void**)PyArray_DATA(%(z)s))[1])
             {
@@ -1344,7 +1343,7 @@ class U2IBatchNormalization(MKLOp):
 
             first_run = 0;
 
-            #ifdef __DEBUG__
+            #ifdef _MKL_DEBUG_
                 printf(\"U2IBatchNormalization: From buffer %%x to buffer %%x\\n\", convert_resources[dnnResouceFrom], convert_resources[dnnResourceTo]);
             #endif
         """ % locals()
