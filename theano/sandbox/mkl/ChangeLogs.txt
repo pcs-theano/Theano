@@ -1,4 +1,12 @@
 Date: 2016/12/23
+Author: Ciyong 
+Changes:
+----------------------------------
+1. Fix gradient Bias graph error
+1. Fix U2I Conv error
+
+
+Date: 2016/12/23
 Author: Patric
 Changes:
 ----------------------------------
@@ -6,6 +14,7 @@ Changes:
 2. rm connection
 
 
+Date: 2016/12/23
 Author: Ciyong
 Changes:
 ----------------------------------

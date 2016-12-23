@@ -1042,7 +1042,7 @@ class U2IConv(MKLOp):
         ccode = """
             if (1 == first_run) {
                 int convPadding[2];
-                size_t convStrides[2], weightSize[4], weightStrides[5], topSize[4], topStrides[5];
+                size_t convStrides[2], weightSize[5], weightStrides[5], topSize[4], topStrides[4];
                 convStrides[0] = %(dW)s;
                 convStrides[1] = %(dH)s;
                 convPadding[0] = -%(padW)s;
