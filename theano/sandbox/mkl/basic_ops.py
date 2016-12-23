@@ -997,7 +997,9 @@ class U2IConv(MKLOp):
     def grad(self, inp, grads):
         x, ws = inp
         gz, = grads
-        return [U2IGrad(uniq_id=self.uniq_id)(x, gz)]
+        disc = [DisconnectedType()() for i in inp[1:]]
+
+        return [U2IGrad(uniq_id=self.uniq_id)(x, gz)] + disc
 
     def c_code(self, node, name, inp, out, sub):
         x, ws = inp
@@ -1144,6 +1146,9 @@ class U2IConv(MKLOp):
             #endif
         """ % locals()
         return ccode
+
+    def connection_pattern(self, node):
+        return [[1], [0]]
 
 
 class U2IElemwiseSum(MKLOp):
