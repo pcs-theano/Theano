@@ -388,30 +388,72 @@ class SoftmaxGrad(gof.Op):
             }
         }
 
-        int num_proc = omp_get_num_procs();
-        #pragma omp parallel num_threads(num_proc)
-        {
-        int tid = omp_get_thread_num();
-        for (size_t i = tid; i < PyArray_DIMS(%(dx)s)[0]; i+=num_proc)
-        {
-            const dtype_%(dy)s* __restrict__ dy_i = (dtype_%(dy)s*) (PyArray_BYTES(%(dy)s) + PyArray_STRIDES(%(dy)s)[0] * i);
-            npy_intp Sdy = PyArray_STRIDES(%(dy)s)[1]/sizeof(dtype_%(dy)s);
-            const dtype_%(sm)s* __restrict__ sm_i = (dtype_%(sm)s*) (PyArray_BYTES(%(sm)s) + PyArray_STRIDES(%(sm)s)[0] * i);
-            npy_intp Ssm = PyArray_STRIDES(%(sm)s)[1]/sizeof(dtype_%(sm)s);
-            dtype_%(dx) s* __restrict__ dx_i = (dtype_%(dx)s*) (PyArray_BYTES(%(dx)s) + PyArray_STRIDES(%(dx)s)[0] * i);
-            npy_intp Sdx = PyArray_STRIDES(%(dx)s)[1]/sizeof(dtype_%(dx)s);
-
-            double sum_dy_times_sm = 0.;
-            for (size_t j = 0; j < PyArray_DIMS(%(dx)s)[1]; ++j)
+        if (PyArray_DIMS(%(dx)s)[0] > 16) {
+            //If the loop size is more than 16, could use the cpu prefetch feature to improve the perf
+            int num_proc = omp_get_num_procs();
+            #pragma omp parallel num_threads(num_proc)
             {
-                dx_i[j * Sdx] = dy_i[j * Sdy] * sm_i[j * Ssm];
-                sum_dy_times_sm += dx_i[j * Sdx];
-            }
-            for (size_t j = 0; j < PyArray_DIMS(%(dx)s)[1]; ++j)
-            {
-                dx_i[j * Sdx] -= sum_dy_times_sm * sm_i[j * Ssm];
+                int tid = omp_get_thread_num();
+                for (size_t i = tid; i < size_t(PyArray_DIMS(%(dx)s)[0]/16 + 1); i+=num_proc)
+                {
+                    size_t ii, count;
+                    if (size_t(PyArray_DIMS(%(dx)s)[0]/16) == i) {
+                        //handle left
+                        count = PyArray_DIMS(%(dx)s)[0]%%16;
+                    }
+                    else {
+                        //handle others
+                        count = 16;
+                    }                    
+                    for (ii = 0; ii < count; ++ii) {
+                        double sum_dy_times_sm = 0.;
+                        const dtype_%(dy)s* __restrict__ dy_i = (dtype_%(dy)s*) (PyArray_BYTES(%(dy)s) + PyArray_STRIDES(%(dy)s)[0] * (i * 16 + ii));
+                        npy_intp Sdy = PyArray_STRIDES(%(dy)s)[1]/sizeof(dtype_%(dy)s);
+                        const dtype_%(sm)s* __restrict__ sm_i = (dtype_%(sm)s*) (PyArray_BYTES(%(sm)s) + PyArray_STRIDES(%(sm)s)[0] * (i * 16 + ii));
+                        npy_intp Ssm = PyArray_STRIDES(%(sm)s)[1]/sizeof(dtype_%(sm)s);
+                        dtype_%(dx)s      * __restrict__ dx_i = (dtype_%(dx)s*) (PyArray_BYTES(%(dx)s) + PyArray_STRIDES(%(dx)s)[0] * (i * 16 + ii));
+                        npy_intp Sdx = PyArray_STRIDES(%(dx)s)[1]/sizeof(dtype_%(dx)s);
+                        
+                        for (size_t j = 0; j < PyArray_DIMS(%(dx)s)[1]; ++j)
+                        {
+                            dx_i[j * Sdx] = dy_i[j * Sdy] * sm_i[j * Ssm];
+                            sum_dy_times_sm += dx_i[j * Sdx];
+                        }
+                        for (size_t j = 0; j < PyArray_DIMS(%(dx)s)[1]; ++j)
+                        {
+                            dx_i[j * Sdx] -= sum_dy_times_sm * sm_i[j * Ssm];
+                        }
+                    }
+                }
             }
         }
+        else {
+            //If the loop size is less than 16, just do the normal parallel
+            int num_proc = omp_get_num_procs();
+            #pragma omp parallel num_threads(num_proc)
+            {
+                int tid = omp_get_thread_num();
+                for (size_t i = tid; i < PyArray_DIMS(%(dx)s)[0]; i+=num_proc)
+                {
+                    const dtype_%(dy)s* __restrict__ dy_i = (dtype_%(dy)s*) (PyArray_BYTES(%(dy)s) + PyArray_STRIDES(%(dy)s)[0] * i);
+                    npy_intp Sdy = PyArray_STRIDES(%(dy)s)[1]/sizeof(dtype_%(dy)s);
+                    const dtype_%(sm)s* __restrict__ sm_i = (dtype_%(sm)s*) (PyArray_BYTES(%(sm)s) + PyArray_STRIDES(%(sm)s)[0] * i);
+                    npy_intp Ssm = PyArray_STRIDES(%(sm)s)[1]/sizeof(dtype_%(sm)s);
+                    dtype_%(dx)s      * __restrict__ dx_i = (dtype_%(dx)s*) (PyArray_BYTES(%(dx)s) + PyArray_STRIDES(%(dx)s)[0] * i);
+                    npy_intp Sdx = PyArray_STRIDES(%(dx)s)[1]/sizeof(dtype_%(dx)s);
+
+                    double sum_dy_times_sm = 0.;
+                    for (size_t j = 0; j < PyArray_DIMS(%(dx)s)[1]; ++j)
+                    {
+                        dx_i[j * Sdx] = dy_i[j * Sdy] * sm_i[j * Ssm];
+                        sum_dy_times_sm += dx_i[j * Sdx];
+                    }
+                    for (size_t j = 0; j < PyArray_DIMS(%(dx)s)[1]; ++j)
+                    {
+                        dx_i[j * Sdx] -= sum_dy_times_sm * sm_i[j * Ssm];
+                    }
+                }
+            }
         }
         ''' % dict(locals(), **sub)
 softmax_grad = SoftmaxGrad()
@@ -512,50 +554,100 @@ class Softmax(gof.Op):
         Ssm1 = PyArray_STRIDES(%(sm)s)[1]/sizeof(dtype_%(sm)s);
         """
 
-        begin_row_loop = """
-        int num_proc = omp_get_num_procs();
-        #pragma omp parallel num_threads(num_proc)
-        {
-        int tid = omp_get_thread_num();
-        for (size_t i = tid; i < Nx[0]; i+=num_proc)
-        {
-            size_t j;
-            double sum = 0.0;
-
-            const dtype_%(x)s* __restrict__ x_i = (dtype_%(x)s*)(PyArray_BYTES(%(x)s) + PyArray_STRIDES(%(x)s)[0] * i);
-            dtype_%(sm) s* __restrict__ sm_i = (dtype_%(sm)s*)(PyArray_BYTES(%(sm)s) + PyArray_STRIDES(%(sm)s)[0] * i);
-
-            dtype_%(sm)s row_max = x_i[0];
-            //std::cout << "0 " << row_max << "\\n";
-            // Get the maximum value of the row
-            for (j = 1; j < Nx[1]; ++j)
+        begin_row_loop_1 = """
+        if (Nx[0] > 16) {
+            int num_proc = omp_get_num_procs();
+            #pragma omp parallel num_threads(num_proc)
             {
-                dtype_%(sm)s row_ij = x_i[j * Sx1] ;
-                //std::cout << "1 " << row_ij << "\\n";
-                row_max   = (row_ij > row_max) ? row_ij : row_max;
-            }
+                int tid = omp_get_thread_num();
+                for (size_t i = tid; i < size_t(Nx[0]/16 + 1); i+=num_proc)
+                {                    
+                    size_t ii, count;
+                    if (size_t(Nx[0]/16) == i) {
+                        //handle left
+                        count = Nx[0]%%16;
+                    }
+                    else {
+                        //handle others
+                        count = 16;
+                    }
+                    
+                    for (ii = 0; ii < count; ++ii) {
+                        size_t j;
+                        double sum = 0.0;
+                        
+                        const dtype_%(x)s* __restrict__ x_i = (dtype_%(x)s*)(PyArray_BYTES(%(x)s) + PyArray_STRIDES(%(x)s)[0] * (i * 16 + ii));
+                        dtype_%(sm) s* __restrict__ sm_i = (dtype_%(sm)s*)(PyArray_BYTES(%(sm)s) + PyArray_STRIDES(%(sm)s)[0] * (i * 16 + ii));
 
+                        dtype_%(sm)s row_max = x_i[0];
+                        //std::cout << "0 " << row_max << "\\n";
+                        // Get the maximum value of the row
+                        for (j = 1; j < Nx[1]; ++j)
+                        {
+                            dtype_%(sm)s row_ij = x_i[j * Sx1] ;
+                            //std::cout << "1 " << row_ij << "\\n";
+                            row_max   = (row_ij > row_max) ? row_ij : row_max;
+                        }
         """
-
+          
         inside_row_loop = """
-            for (j = 0; j < Nx[1]; ++j)
-            {
-                dtype_%(sm)s row_ij = x_i[j * Sx1] ;
-                //std::cout << "2 " << j << " " << row_ij << " " << row_max << "\\n";
-                dtype_%(sm)s sm_ij = exp(row_ij - row_max);
-                //std::cout << "3 " << j << " " << sm_ij << "\\n";
-                sum += sm_ij;
-                sm_i[j * Ssm1] = sm_ij;
-            }
+                        for (j = 0; j < Nx[1]; ++j)
+                        {
+                            dtype_%(sm)s row_ij = x_i[j * Sx1] ;
+                            //std::cout << "2 " << j << " " << row_ij << " " << row_max << "\\n";
+                            dtype_%(sm)s sm_ij = exp(row_ij - row_max);
+                            //std::cout << "3 " << j << " " << sm_ij << "\\n";
+                            sum += sm_ij;
+                            sm_i[j * Ssm1] = sm_ij;
+                        }
 
-            //cblas_dscal(x.N, 1.0 / sum, &mat_at(s,i,0), s.n);
-            double sum_inv = 1.0 / sum;
+                        //cblas_dscal(x.N, 1.0 / sum, &mat_at(s,i,0), s.n);
+                        double sum_inv = 1.0 / sum;
 
-            for (j = 0; j < Nx[1]; ++j)
-            {
-                sm_i[j * Ssm1] *= sum_inv;
+                        for (j = 0; j < Nx[1]; ++j)
+                        {
+                            sm_i[j * Ssm1] *= sum_inv;
+                        }
+          """
+      
+        end_row_loop_1 = """
+                    }
+                }   
             }
+        }
         """
+
+        begin_row_loop_2 = """  
+        else {
+            int num_proc = omp_get_num_procs();
+            #pragma omp parallel num_threads(num_proc)
+            {
+                int tid = omp_get_thread_num();
+                for (size_t i = tid; i < Nx[0]; i+=num_proc)
+                {
+                    size_t j;
+                    double sum = 0.0;
+
+                    const dtype_%(x)s* __restrict__ x_i = (dtype_%(x)s*)(PyArray_BYTES(%(x)s) + PyArray_STRIDES(%(x)s)[0] * i);
+                    dtype_%(sm) s* __restrict__ sm_i = (dtype_%(sm)s*)(PyArray_BYTES(%(sm)s) + PyArray_STRIDES(%(sm)s)[0] * i);
+
+                    dtype_%(sm)s row_max = x_i[0];
+                    //std::cout << "0 " << row_max << "\\n";
+                    // Get the maximum value of the row
+                    for (j = 1; j < Nx[1]; ++j)
+                    {
+                        dtype_%(sm)s row_ij = x_i[j * Sx1] ;
+                        //std::cout << "1 " << row_ij << "\\n";
+                        row_max   = (row_ij > row_max) ? row_ij : row_max;
+                    }
+        """
+
+        end_row_loop_2 = """
+                }
+            }
+        }
+        """
+
         # Get the vectorized version of exp if it exist
         try:
             vec_exp = theano.scalar.exp.c_code_contiguous_raw(dtype,
@@ -589,12 +681,7 @@ class Softmax(gof.Op):
             """ % locals()
         except theano.gof.utils.MethodNotDefined:
             pass
-
-        end_row_loop = """
-        }
-        }
-        """
-        return (init_decl, begin_row_loop, inside_row_loop, end_row_loop)
+        return (init_decl, begin_row_loop_1, inside_row_loop, end_row_loop_1, begin_row_loop_2, inside_row_loop, end_row_loop_2)
 
     def c_code(self, node, name, inp, out, sub):
         x, = inp
