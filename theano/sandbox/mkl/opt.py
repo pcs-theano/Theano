@@ -115,12 +115,7 @@ class ReplaceConvBias(Optimizer):
         return None
 
     def _check_grad_bias_(self, node, i):
-        if isinstance(node.op, tensor.Elemwise):
-            assert i == 0
-            assert len(node.outputs[0].clients) >= 3
-        elif isinstance(node.op, tensor.Split):
-            assert len(node.outputs[i].clients) >= 3
-
+        assert len(node.outputs[i].clients) >= 2
         op = []
         pre_op = [tensor.DimShuffle, tensor.Elemwise, tensor.DimShuffle]
         for c in node.outputs[i].clients:
@@ -257,17 +252,10 @@ class ReplaceConvBias(Optimizer):
 
                                         # Get BiasGrad
                                         oriBiasGrad = None  # BiasGrad in original function graph
-                                        if isinstance(inp[1].owner.op, tensor.Elemwise):
-                                            node_e = inp[1].owner
-                                            if len(node_e.outputs[0].clients) >= 3:
-                                                oriBiasGrad = self._check_grad_bias_(node_e, 0)
-                                        elif isinstance(inp[1].owner.op, tensor.Split):
-                                            node_e = inp[1].owner
-                                            for i, split_out in enumerate(node_e.outputs):
-                                                if inp[1] is split_out and len(split_out.clients) >= 3:
-                                                    oriBiasGrad = self._check_grad_bias_(node_e, i)
-                                        else:
-                                            pass
+                                        gz_node = inp[1].owner
+                                        for i, o in enumerate(gz_node.outputs):
+                                            if inp[1] is o and len(o.clients) >= 2:
+                                                oriBiasGrad = self._check_grad_bias_(gz_node, i)
 
                                         fgraph.replace_validate(out[0], out_0, 'ReplaceConvBias')
                                         if oriBiasGrad:
