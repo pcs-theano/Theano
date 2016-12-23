@@ -995,7 +995,7 @@ class U2IConv(MKLOp):
         return Apply(self, [x, ws], [x.type()])
 
     def grad(self, inp, grads):
-        x, = inp
+        x, ws = inp
         gz, = grads
         return [U2IGrad(uniq_id=self.uniq_id)(x, gz)]
 
