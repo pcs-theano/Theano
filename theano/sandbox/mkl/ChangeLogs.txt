@@ -4,6 +4,13 @@ Changes:
 ----------------------------------
 1. rm ws from U2IConv 
 
+
+Author: Ciyong
+Changes:
+----------------------------------
+1. Fix U2IConv grad error
+
+
 Date: 2016/12/22
 Author: Patric
 Changes:

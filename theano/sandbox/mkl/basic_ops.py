@@ -199,9 +199,6 @@ class U2IPool(MKLOp):
         """ % locals()
         return ccode
 
-    def connection_pattern(self, node):
-        return [[1], [0], [0], [0]]
-
 
 class I2U(MKLOp):
     __props__ = ('uniq_id',)
@@ -1005,9 +1002,6 @@ class U2IConv(MKLOp):
         if self.imshp is None:
             self.imshp = x.shape
 
-        if self.kshp is None:
-            self.kshp = ws.shape
-
         i_n, i_c, i_h, i_w = self.imshp
 
         if len(self.kshp) == 5:
@@ -1142,6 +1136,9 @@ class U2IConv(MKLOp):
             #endif
         """ % locals()
         return ccode
+
+    def connection_pattern(self, node):
+        return [[1], [0]]
 
 
 class U2IElemwiseSum(MKLOp):
