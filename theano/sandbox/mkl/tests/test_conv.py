@@ -23,18 +23,16 @@ else:
 class test_mkl_conv_forward(unittest.TestCase):
     def test_conv_U2I(self):
         images = T.ftensor4('inputs')
-        weights = T.ftensor4('weights')
         a_internal = U2IConv(imshp=(12, 3, 256, 256),
                              kshp=(12, 3, 3, 3),
-                             uniq_id=1)(images, weights)
+                             uniq_id=1)(images)
         out = I2U(uniq_id=2)(a_internal)
 
         theano.printing.pydotprint(out, outfile="conv_UU_fwd_befor_opt.png", var_with_name_simple=True)
-        fopt = theano.function([images, weights], out, mode=mode_with_mkl)
+        fopt = theano.function([images], out, mode=mode_with_mkl)
         theano.printing.pydotprint(fopt, outfile="conv_UU_fwd_after_opt.png", var_with_name_simple=True)
         ival = numpy.random.rand(12, 3, 256, 256).astype(numpy.float32)
-        wval = numpy.random.rand(12, 3, 3, 3).astype(numpy.float32)
-        assert numpy.allclose(fopt(ival, wval), ival)
+        assert numpy.allclose(fopt(ival), ival)
 
     def test_conv_no_bias(self):
         images = T.ftensor4('inputs')

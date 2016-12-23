@@ -989,10 +989,9 @@ class U2IConv(MKLOp):
         else:
             return '%s' % (self.__class__.__name__)
 
-    def make_node(self, x, ws):
+    def make_node(self, x):
         x = T.as_tensor_variable(x)
-        ws = T.as_tensor_variable(ws)
-        return Apply(self, [x, ws], [x.type()])
+        return Apply(self, [x], [x.type()])
 
     def grad(self, inp, grads):
         x, = inp
@@ -1000,7 +999,7 @@ class U2IConv(MKLOp):
         return [U2IGrad(uniq_id=self.uniq_id)(x, gz)]
 
     def c_code(self, node, name, inp, out, sub):
-        x, ws = inp
+        x, = inp
         dH, dW = self.subsample
 
         if self.imshp is None:
@@ -1083,7 +1082,6 @@ class U2IConv(MKLOp):
                 topStrides[1] = topSize[0];
                 topStrides[2] = topSize[0] * topSize[1];
                 topStrides[3] = topSize[0] * topSize[1] * topSize[2];
-                topStrides[4] = topSize[0] * topSize[1] * topSize[2] * topSize[3];
 
                 const int group = %(grp)s;
                 //create user layout

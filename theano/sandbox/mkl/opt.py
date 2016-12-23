@@ -170,7 +170,7 @@ class ReplaceConvBias(Optimizer):
                                 try:
                                     uniq_id += 1
                                     inp_0 = U2IConv(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample,
-                                                    filter_dilation=filter_dilation, uniq_id=uniq_id)(inp[0], inp[1])
+                                                    filter_dilation=filter_dilation, uniq_id=uniq_id)(inp[0])
                                     uniq_id += 1
                                     out_0 = mkl_conv.Conv2D(imshp=imshp,
                                                             kshp=kshp,
@@ -189,7 +189,7 @@ class ReplaceConvBias(Optimizer):
                                 try:
                                     uniq_id += 1
                                     inp_0 = U2IConv(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample,
-                                                    filter_dilation=filter_dilation, uniq_id=uniq_id)(inp[0], inp[1])
+                                                    filter_dilation=filter_dilation, uniq_id=uniq_id)(inp[0])
                                     uniq_id += 1
                                     out_0 = mkl_conv.Conv2D(imshp=imshp,
                                                             kshp=kshp,
@@ -229,7 +229,7 @@ class ReplaceConvBias(Optimizer):
                                     try:
                                         uniq_id += 1
                                         inp_0 = U2IConv(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample,
-                                                        filter_dilation=filter_dilation, uniq_id=uniq_id)(inp[0], inp[1])
+                                                        filter_dilation=filter_dilation, uniq_id=uniq_id)(inp[0])
 
                                         uniq_id += 1
                                         conv_fw = mkl_conv.Conv2D(imshp=imshp,
@@ -298,7 +298,7 @@ class ReplaceConvBias(Optimizer):
                         try:
                             uniq_id += 1
                             inp_0 = U2IConv(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample,
-                                            filter_dilation=filter_dilation, uniq_id=uniq_id)(x, inp[0])
+                                            filter_dilation=filter_dilation, uniq_id=uniq_id)(x)
 
                             uniq_id += 1
                             conv_fw = mkl_conv.Conv2D(imshp=imshp,
@@ -673,7 +673,7 @@ def local_Conv2D_mkl(node):
                              kshp=node.op.kshp,
                              subsample=node.op.subsample,
                              filter_dilation=node.op.filter_dilation,
-                             uniq_id=uniq_id)(x, ws)
+                             uniq_id=uniq_id)(x)
         convOut = mkl_conv.Conv2D(imshp=node.op.imshp,
                                   kshp=node.op.kshp,
                                   border_mode=node.op.border_mode,
@@ -715,7 +715,7 @@ def local_ConvGradInputs_mkl(node):
                              kshp=node.op.kshp,
                              subsample=node.op.subsample,
                              filter_dilation=node.op.filter_dilation,
-                             uniq_id=uniq_id)(x, ws)
+                             uniq_id=uniq_id)(x)
         convOut = mkl_conv.Conv2D(imshp=node.op.imshp,
                                   kshp=node.op.kshp,
                                   border_mode=node.op.border_mode,
@@ -762,7 +762,7 @@ def local_ConvGradWeights_mkl(node):
                              kshp=node.op.kshp,
                              subsample=node.op.subsample,
                              filter_dilation=node.op.filter_dilation,
-                             uniq_id=uniq_id)(x, ws)
+                             uniq_id=uniq_id)(x)
         convOut = mkl_conv.Conv2D(imshp=node.op.imshp,
                                   kshp=node.op.kshp,
                                   border_mode=node.op.border_mode,
