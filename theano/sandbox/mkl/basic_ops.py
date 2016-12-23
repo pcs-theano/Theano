@@ -1137,9 +1137,6 @@ class U2IConv(MKLOp):
         """ % locals()
         return ccode
 
-    def connection_pattern(self, node):
-        return [[1], [0]]
-
 
 class U2IElemwiseSum(MKLOp):
     __props__ = ('inp_num', 'coeff')

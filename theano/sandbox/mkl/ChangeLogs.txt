@@ -3,6 +3,7 @@ Author: Patric
 Changes:
 ----------------------------------
 1. rm ws from U2IConv 
+2. rm connection
 
 
 Author: Ciyong
