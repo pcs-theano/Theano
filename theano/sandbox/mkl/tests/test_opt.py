@@ -472,13 +472,19 @@ def test_mkl_elemwise_sum_forward():
     topo = f.maker.fgraph.toposort()
     # inputs = f.maker.fgraph.inputs
     # outputs = f.maker.fgraph.outputs
-    assert len(topo) == 6 
-    theano.printing.pydotprint(f, outfile="mkl_elemwise_sum_opt.png",  var_with_name_simple=True)
+    assert len(topo) == 6
     assert isinstance(topo[4].op, mkl_elemwise.ElemwiseSum)
     assert isinstance(topo[5].op, basic_ops.I2U)
     
     imval = numpy.random.rand(4, 2 ,4, 4).astype(numpy.float32)
-    f(imval)
+    new_out = f(imval)
+
+    forig = theano.function(inputs=[x], outputs=out, mode=mode_without_mkl)
+    topo_orig = forig.maker.fgraph.toposort()
+
+    assert len(topo) != len(topo_orig)
+    ref_out = forig(imval)
+    assert numpy.allclose(new_out, ref_out)
     print('test_mkl_elemwise_sum_forward() pass..')
 
 

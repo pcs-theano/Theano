@@ -86,8 +86,22 @@ mkl_seqopt.register('CutMKLDataConversionChain', CutMKLDataConversionChain(),
                     'mkl')
 
 
-# Global Optimizer for replace 'conv() + bias' with conv_with_bias()
 class ReplaceConvBias(Optimizer):
+    """
+    This global optimizer looks for the pattern AbstractConv2d + Bias in funtion graph.
+    Replace AbstractConv2d and Elemwise{Add} OPs with MKLDNN Conv2D OP which can accept
+    3 inputs (image, weights, bias) to improve performance.
+
+    The Bias variable is always followed a DimShuffle OP in function graph. This case is
+    processed in this optimizer.
+
+    If the pattern AbstractConv2d + Bias is found and replaced in function graph. The
+    backward OPs need be optimized respectively. We use ConvGradWeights and ConvGradInputs
+    to replace AbstractConv2d_gradWeights and AbstractConv2d_gradInputs. ConvGradWeights
+    gives two outputs: gradWeigths and gradBias.
+
+    For the non-bias AbstractConv2d scenario, it will be handled by local optimizations.
+    """
     def __init__(self):
         super(ReplaceConvBias, self).__init__()
 
@@ -166,7 +180,6 @@ class ReplaceConvBias(Optimizer):
                                     uniq_id += 1
                                     inp_0 = U2IConv(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample,
                                                     filter_dilation=filter_dilation, uniq_id=uniq_id)(inp[0])
-                                    uniq_id += 1
                                     out_0 = mkl_conv.Conv2D(imshp=imshp,
                                                             kshp=kshp,
                                                             border_mode=border_mode,
@@ -185,7 +198,6 @@ class ReplaceConvBias(Optimizer):
                                     uniq_id += 1
                                     inp_0 = U2IConv(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample,
                                                     filter_dilation=filter_dilation, uniq_id=uniq_id)(inp[0])
-                                    uniq_id += 1
                                     out_0 = mkl_conv.Conv2D(imshp=imshp,
                                                             kshp=kshp,
                                                             border_mode=border_mode,
@@ -193,12 +205,10 @@ class ReplaceConvBias(Optimizer):
                                                             filter_flip=filter_flip,
                                                             filter_dilation=filter_dilation,
                                                             uniq_id=uniq_id)(image=inp_0, weight=inp[1], bias=bias_owner.inputs[0])
-                                    uniq_id += 1
                                     out_1 = I2U(uniq_id=uniq_id)(out_0)
                                     fgraph.replace_validate(out[0].clients[0][0].outputs[0],
                                                             out_1,
                                                             'ReplaceConvBias')
-                                    # theano.printing.pydotprint(fgraph, outfile='replace_conv_fw.png', var_with_name_simple=True)
                                     did_something = True
                                 except Exception as e:
                                     raise
@@ -219,25 +229,18 @@ class ReplaceConvBias(Optimizer):
                         if hasattr(c[0], 'op') and isinstance(c[0].op, U2IConv):
                             for cc in c[0].outputs[0].clients:
                                 if isinstance(cc[0].op, mkl_conv.Conv2D) and len(cc[0].inputs) == 3:
-                                    # theano.printing.pydotprint(fgraph, outfile='zzzz.png', var_with_name_simple=True)
                                     weight, bias = cc[0].inputs[1:3]
                                     try:
                                         uniq_id += 1
                                         inp_0 = U2IConv(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample,
                                                         filter_dilation=filter_dilation, uniq_id=uniq_id)(inp[0])
-
-                                        uniq_id += 1
                                         conv_fw = mkl_conv.Conv2D(imshp=imshp,
                                                                   kshp=kshp,
                                                                   border_mode=border_mode,
                                                                   subsample=subsample,
                                                                   filter_flip=filter_flip,
                                                                   filter_dilation=filter_dilation)(inp_0, weight, bias)
-
-                                        uniq_id += 1
                                         gz = I2UGrad(uniq_id=uniq_id)(conv_fw, inp[1])
-
-                                        uniq_id += 1
                                         out_0, out_1 = mkl_conv.ConvGradWeights(imshp=imshp,
                                                                                 kshp=kshp,
                                                                                 border_mode=border_mode,
@@ -245,11 +248,6 @@ class ReplaceConvBias(Optimizer):
                                                                                 filter_flip=filter_flip,
                                                                                 filter_dilation=filter_dilation,
                                                                                 uniq_id=uniq_id)(image=inp_0, weight=weight, gradz=gz, bias=bias)
-                                        # uniq_id += uniq_id
-                                        # weightsGrad = U2IGrad(uniq_id=uniq_id)(weight, out_0)
-                                        # uniq_id += uniq_id
-                                        # biasGrad = U2IGrad(uniq_id=uniq_id)(bias, out_1)
-
                                         # Get BiasGrad
                                         oriBiasGrad = None  # BiasGrad in original function graph
                                         gz_node = inp[1].owner
@@ -287,29 +285,21 @@ class ReplaceConvBias(Optimizer):
                             uniq_id += 1
                             inp_0 = U2IConv(imshp=imshp, kshp=kshp, border_mode=border_mode, subsample=subsample,
                                             filter_dilation=filter_dilation, uniq_id=uniq_id)(x)
-
-                            uniq_id += 1
                             conv_fw = mkl_conv.Conv2D(imshp=imshp,
                                                       kshp=kshp,
                                                       border_mode=border_mode,
                                                       subsample=subsample,
                                                       filter_flip=filter_flip,
                                                       filter_dilation=filter_dilation)(inp_0, inp[0], bias)
-                            uniq_id += 1
                             gz = I2UGrad(uniq_id=uniq_id)(conv_fw, inp[1])
-
-                            uniq_id += 1
                             out_0 = mkl_conv.ConvGradInputs(imshp=imshp,
                                                             kshp=kshp,
                                                             border_mode=border_mode,
                                                             subsample=subsample,
                                                             filter_flip=filter_flip,
                                                             filter_dilation=filter_dilation)(inp_0, inp[0], gz)
-
-                            uniq_id += 1
                             inp_grad = U2IGrad(uniq_id=uniq_id)(x, out_0)
                             fgraph.replace_validate(out[0], inp_grad, 'ReplaceConvBias')
-                            # theano.printing.pydotprint(fgraph, outfile='replace_conv_input_grad.png', var_with_name_simple=True)
                             did_something = True
                         except Exception as e:
                             raise e
@@ -321,8 +311,14 @@ class ReplaceConvBias(Optimizer):
 mkl_seqopt.register('MKL_CONV_REPLACE', ReplaceConvBias(), 0.095, 'fast_run', 'fast_compile', 'mkl')
 
 
-# GLobal Optimizer for replace Elemwise_add with mkl_elemwise_sum
 class ReplaceElemwise(Optimizer):
+    """
+    This is a global optimizer. It looks for sequential Elemwise{Add} OPs which inputs are
+    generated by I2U or U2IGrad. We use one ElemwiseSum OP to replace these Elemwise{Add} OPs
+    to reduce the time cost of layout conversion.
+
+    The coefficients for ElemwiseSum OP in this optimizer are all 1.0 currently.
+    """
     def __init__(self):
         super(ReplaceElemwise, self).__init__()
 
@@ -330,7 +326,6 @@ class ReplaceElemwise(Optimizer):
         fgraph.attach_feature(toolbox.ReplaceValidate())
 
     def apply(self, fgraph):
-        # theano.printing.pydotprint(fgraph, outfile='xxxxxx.png', var_with_name_simple=True)
         global uniq_id
 
         def getElemwiseInput(node, inputs, coeffs, co):
@@ -571,30 +566,36 @@ def local_lrn_mkl(node):
     global uniq_id
     uniq_id += 1
 
-    if not mkl_available():
+    if not mkl_available.avail:
         return
 
     if not isinstance(node.op, mkl_lrn.AbstractLRN):
         return
 
-    x, = node.inputs
-    x_u2i = U2ILRN(slope=node.op.slope,
-                   uniq_id=uniq_id,
-                   alpha=node.op.alpha,
-                   beta=node.op.beta,
-                   k=node.op.k,
-                   n=node.op.n)(x)
+    if node.inputs[0].type.ndim != 4:
+        return
 
-    lrnout = mkl_lrn.LRN(uniq_id=uniq_id,
-                         alpha=node.op.alpha,
-                         beta=node.op.beta,
-                         k=node.op.k,
-                         n=node.op.n)(x_u2i)
-
-    z_i2u = I2U(uniq_id=uniq_id)(lrnout)
-
-    rval = z_i2u
-    return [rval]
+    try:
+        x, = node.inputs
+        x_u2i = U2ILRN(slope=node.op.slope,
+                       uniq_id=uniq_id,
+                       alpha=node.op.alpha,
+                       beta=node.op.beta,
+                       k=node.op.k,
+                       n=node.op.n)(x)
+        lrnout = mkl_lrn.LRN(uniq_id=uniq_id,
+                             alpha=node.op.alpha,
+                             beta=node.op.beta,
+                             k=node.op.k,
+                             n=node.op.n)(x_u2i)
+        z_i2u = I2U(uniq_id=uniq_id)(lrnout)
+        rval = z_i2u
+        return [rval]
+    except Exception as e:
+        msg = ('Failed to apply local opt to Op %s. '
+               'Exception message: %s\n') % (node.op, str(e))
+        _logger.warning(msg)
+        return
 
 
 @register_opt()
@@ -603,39 +604,43 @@ def local_lrnGrad_mkl(node):
     global uniq_id
     uniq_id += 1
 
-    if not mkl_available():
+    if not mkl_available.avail:
         return
 
     if not isinstance(node.op, mkl_lrn.AbstractLRNGrad):
         return
 
-    x, gz, = node.inputs
+    if node.inputs[0].type.ndim != 4:
+        return
 
-    x_u2i = U2ILRN(slope=node.op.slope,
-                   uniq_id=uniq_id,
-                   alpha=node.op.alpha,
-                   beta=node.op.beta,
-                   k=node.op.k,
-                   n=node.op.n)(x)
-
-    lrnOut = mkl_lrn.LRN(uniq_id=uniq_id,
-                         alpha=node.op.alpha,
-                         beta=node.op.beta,
-                         k=node.op.k,
-                         n=node.op.n)(x_u2i)
-
-    gz_u2i = I2UGrad(uniq_id=uniq_id)(lrnOut, gz)
-    lrnGradOut = mkl_lrn.LRNGrad(uniq_id=uniq_id,
-                                 alpha=node.op.alpha,
-                                 beta=node.op.beta,
-                                 k=node.op.k,
-                                 n=node.op.n,
-                                 fp=node.op.fp)(x_u2i, gz_u2i)
-
-    gx_i2u = U2IGrad(uniq_id=uniq_id)(x, lrnGradOut)
-
-    rval = gx_i2u
-    return [rval]
+    try:
+        x, gz, = node.inputs
+        x_u2i = U2ILRN(slope=node.op.slope,
+                       uniq_id=uniq_id,
+                       alpha=node.op.alpha,
+                       beta=node.op.beta,
+                       k=node.op.k,
+                       n=node.op.n)(x)
+        lrnOut = mkl_lrn.LRN(uniq_id=uniq_id,
+                             alpha=node.op.alpha,
+                             beta=node.op.beta,
+                             k=node.op.k,
+                             n=node.op.n)(x_u2i)
+        gz_u2i = I2UGrad(uniq_id=uniq_id)(lrnOut, gz)
+        lrnGradOut = mkl_lrn.LRNGrad(uniq_id=uniq_id,
+                                     alpha=node.op.alpha,
+                                     beta=node.op.beta,
+                                     k=node.op.k,
+                                     n=node.op.n,
+                                     fp=node.op.fp)(x_u2i, gz_u2i)
+        gx_i2u = U2IGrad(uniq_id=uniq_id)(x, lrnGradOut)
+        rval = gx_i2u
+        return [rval]
+    except Exception as e:
+        msg = ('Failed to apply local opt to Op %s. '
+               'Exception message: %s\n') % (node.op, str(e))
+        _logger.warning(msg)
+        return
 
 
 @local_optimizer([AbstractConv2d])
@@ -792,24 +797,31 @@ def local_bn_mkl(node):
     global uniq_id
     uniq_id += 1
 
-    if not mkl_available():
+    if not mkl_available.avail:
         return
 
     if not isinstance(node.op, mkl_bn.AbstractBatchNormalization):
         return
 
-    x, scale, shift, = node.inputs[0:3]
-    x_u2i = U2IBatchNormalization(eps=node.op.eps,
-                                  uniq_id=uniq_id)(x)
+    if node.inputs[0].type.ndim != 4:
+        return
 
-    bn_out = mkl_bn.BatchNormalization(eps=node.op.eps,
-                                       bias=node.op.bias,
-                                       term=node.op.term,
-                                       uniq_id=uniq_id)(x_u2i, scale, shift)
-
-    z_i2u = I2U(uniq_id=uniq_id)(bn_out)
-    rval = z_i2u
-    return [rval]
+    try:
+        x, scale, shift, = node.inputs[0:3]
+        x_u2i = U2IBatchNormalization(eps=node.op.eps,
+                                      uniq_id=uniq_id)(x)
+        bn_out = mkl_bn.BatchNormalization(eps=node.op.eps,
+                                           bias=node.op.bias,
+                                           term=node.op.term,
+                                           uniq_id=uniq_id)(x_u2i, scale, shift)
+        z_i2u = I2U(uniq_id=uniq_id)(bn_out)
+        rval = z_i2u
+        return [rval]
+    except Exception as e:
+        msg = ('Failed to apply local opt to Op %s. '
+               'Exception message: %s\n') % (node.op, str(e))
+        _logger.warning(msg)
+        return
 
 
 @register_opt()
@@ -818,28 +830,33 @@ def local_bnGrad_mkl(node):
     global uniq_id
     uniq_id += 1
 
-    if not mkl_available():
+    if not mkl_available.avail:
         return
 
     if not isinstance(node.op, mkl_bn.AbstractBatchNormalizationGrad):
         return
 
-    x, gz, scale, shift, = node.inputs
-    x_u2i = U2IBatchNormalization(eps=node.op.eps,
-                                  uniq_id=uniq_id)(x)
+    if node.inputs[0].type.ndim != 4:
+        return
 
-    bn_out = mkl_bn.BatchNormalization(eps=node.op.eps,
-                                       bias=node.op.bias,
-                                       term=node.op.term,
-                                       uniq_id=uniq_id)(x_u2i, scale, shift)
-
-    gz_u2i = I2UGrad(uniq_id=uniq_id)(bn_out, gz)
-
-    bn_GradOut = mkl_bn.BatchNormalizationGrad(eps=node.op.eps,
-                                               bias=node.op.bias,
-                                               term=node.op.term,
-                                               uniq_id=uniq_id)(x_u2i, gz_u2i, scale, shift)
-
-    gx_i2u = U2IGrad(uniq_id=uniq_id)(x, bn_GradOut[0])
-    rval = [gx_i2u, bn_GradOut[1], bn_GradOut[2]]
-    return rval
+    try:
+        x, gz, scale, shift, = node.inputs
+        x_u2i = U2IBatchNormalization(eps=node.op.eps,
+                                      uniq_id=uniq_id)(x)
+        bn_out = mkl_bn.BatchNormalization(eps=node.op.eps,
+                                           bias=node.op.bias,
+                                           term=node.op.term,
+                                           uniq_id=uniq_id)(x_u2i, scale, shift)
+        gz_u2i = I2UGrad(uniq_id=uniq_id)(bn_out, gz)
+        bn_GradOut = mkl_bn.BatchNormalizationGrad(eps=node.op.eps,
+                                                   bias=node.op.bias,
+                                                   term=node.op.term,
+                                                   uniq_id=uniq_id)(x_u2i, gz_u2i, scale, shift)
+        gx_i2u = U2IGrad(uniq_id=uniq_id)(x, bn_GradOut[0])
+        rval = [gx_i2u, bn_GradOut[1], bn_GradOut[2]]
+        return rval
+    except Exception as e:
+        msg = ('Failed to apply local opt to Op %s. '
+               'Exception message: %s\n') % (node.op, str(e))
+        _logger.warning(msg)
+        return

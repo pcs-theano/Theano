@@ -817,7 +817,7 @@ class I2UGrad(MKLOp):
 
 
 class U2ILRN(MKLOp):
-    __props__ = ('slope', 'alpha', 'beta', 'k', 'size', 'uniq_id')
+    __props__ = ('slope', 'alpha', 'beta', 'k', 'size')
 
     def __init__(self, slope=1, alpha=1e-4, beta=0.75, k=2, n=5, uniq_id=0):
         super(U2ILRN, self).__init__(uniq_id)
@@ -827,32 +827,10 @@ class U2ILRN(MKLOp):
         self.k = k
         self.size = n
 
-    def __eq__(self, other):
-        if hasattr(self, '__props__'):
-            if type(self) != type(other):
-                return False
-            else:
-                self_props = [getattr(self, p) for p in self.__props__ if p != 'uniq_id']
-                other_props = [getattr(other, p) for p in other.__props__ if p != 'uniq_id']
-                if self_props == other_props:
-                    return True
-                else:
-                    return False
-        else:
-            return NotImplemented
-
-    def __hash__(self):
-        return hash(self.slope) ^ hash(self.alpha) ^ hash(self.beta) ^ hash(self.k) ^ hash(self.size)
-
-    def __str__(self):
-        if hasattr(self, '__props__'):
-            return '%s{%s}' % (self.__class__.__name__,
-                               ', '.join('%s=%r' % (p, getattr(self, p)) for p in self.__props__))
-        else:
-            return '%s' % (self.__class__.__name__)
-
     def make_node(self, x):
         x = T.as_tensor_variable(x)
+        if x.type.ndim != 4:
+            raise TypeError('Input should be a 4-dim variable.')
         return Apply(self, [x], [x.type()])
 
     def grad(self, inp, grads):
@@ -897,49 +875,39 @@ class U2ILRN(MKLOp):
                 CHECK_ERR( dnnLRNCreateForward_%(precision)s(&primitive, NULL, layout_usr, %(size)s, %(alpha)s, %(beta)s, %(k)s), err );
                 CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_internal, primitive, dnnResourceSrc), err );
 
-                if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_internal))
-                {
-                    if (NULL == to_internal)
-                    {
+                if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_internal)) {
+                    if (NULL == to_internal) {
                         CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_usr, layout_internal), err );
                     }
                 }
             }
 
-            if (NULL == %(z)s)
-            {
+            if (NULL == %(z)s) {
                 //Create PyArrayObject for output
                 %(z)s = (PyArrayObject*)PyArray_ZEROS(DIMENSION, PyArray_DIMS(%(x)s), PyArray_TYPE(%(x)s), 0);
 
-                if (NULL == %(z)s)
-                {
+                if (NULL == %(z)s) {
                     %(fail)s
                 }
 
-                if (NULL == internal_ptr)
-                {
+                if (NULL == internal_ptr) {
                     CHECK_ERR(  dnnAllocateBuffer_%(precision)s((void**)&internal_ptr, layout_internal), err );
                 }
             }
 
-            if (to_internal)
-            {
+            if (to_internal) {
                 convert_resources[dnnResourceFrom] = (PyArray_DATA(%(x)s));
                 convert_resources[dnnResourceTo] = (void*)(internal_ptr);
                 CHECK_ERR( dnnExecute_%(precision)s(to_internal, convert_resources), err );
-            }
-            else
-            {
+            } else {
                 internal_ptr = (PyArray_DATA(%(x)s));
             }
 
-            if (layout_internal != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
-            {
+            if (layout_internal != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0]) {
                 ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_internal;
             }
 
-            if (internal_ptr != ((void**)PyArray_DATA(%(z)s))[1])
-            {
+            if (internal_ptr != ((void**)PyArray_DATA(%(z)s))[1]) {
                 ((void**)PyArray_DATA(%(z)s))[1] = internal_ptr;
             }
 
@@ -1145,7 +1113,7 @@ class U2IElemwiseSum(MKLOp):
         super(U2IElemwiseSum, self).__init__(uniq_id)
         self.coeff = coeff
         self.inp_num = inp_num
-        assert isinstance(self.coeff, list)
+        assert isinstance(self.coeff, (list, tuple))
         if self.inp_num != len(self.coeff):
             raise ValueError('Number of ElemwiseSum inputs is not equal to number of coefficients.')
 
@@ -1154,7 +1122,7 @@ class U2IElemwiseSum(MKLOp):
 
     def make_node(self, x):
         x = T.as_tensor_variable(x)
-        if x.ndim != 4:
+        if x.type.ndim != 4:
             raise TypeError('U2IElemwiseSum inputs should be 4-dim tensor')
         return Apply(self, [x], [x.type()])
 
@@ -1179,11 +1147,10 @@ class U2IElemwiseSum(MKLOp):
             raise Exception('Type %s is not supported!' % node.inputs[0].type.dtype)
 
         fail = sub['fail']
-
-        sub['L'] = inp_num
+        sub['len'] = inp_num
 
         ccode = """
-            %(type)s coeffs[%(L)s] = {1.0};
+            %(type)s coeffs[%(len)s] = {1.0};
         """ % sub
 
         for i, co in enumerate(coeff):
@@ -1208,46 +1175,38 @@ class U2IElemwiseSum(MKLOp):
                 CHECK_ERR( dnnSumCreate_%(precision)s(&primitive, NULL, %(inp_num)s, layout_usr, coeffs), err);
                 CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_internal, primitive, dnnResourceMultipleSrc), err );
 
-                if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_internal))
-                {
-                    if (NULL == to_internal)
-                    {
+                if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_internal)) {
+                    if (NULL == to_internal) {
                         CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_usr, layout_internal), err );
                     }
                 }
             }
 
-            if (NULL == %(z)s)
-            {
+            if (NULL == %(z)s) {
                 //Create PyArrayObject for output
                 %(z)s = (PyArrayObject*)PyArray_ZEROS(DIMENSION, PyArray_DIMS(%(x)s), PyArray_TYPE(%(x)s), 0);
-                if (NULL == %(z)s)
-                {
+                if (NULL == %(z)s) {
                     %(fail)s
                 }
 
-                if (NULL == internal_ptr)
-                {
+                if (NULL == internal_ptr) {
                     CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&internal_ptr, layout_internal), err );
                 }
             }
 
-            if (to_internal)
-            {
+            if (to_internal) {
                 convert_resources[dnnResourceFrom] = (PyArray_DATA(%(x)s));
                 convert_resources[dnnResourceTo] = (void*)(internal_ptr);
                 CHECK_ERR( dnnExecute_%(precision)s(to_internal, convert_resources), err );
-            }
-            else
-            {
+            } else {
                 internal_ptr = (PyArray_DATA(%(x)s));
             }
-            if (layout_internal != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
-            {
+
+            if (layout_internal != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0]) {
                 ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_internal;
             }
-            if (internal_ptr != ((void**)PyArray_DATA(%(z)s))[1])
-            {
+
+            if (internal_ptr != ((void**)PyArray_DATA(%(z)s))[1]) {
                 ((void**)PyArray_DATA(%(z)s))[1] = internal_ptr;
             }
 
@@ -1263,12 +1222,13 @@ class U2IBatchNormalization(MKLOp):
     __props__ = ('eps',)
 
     def __init__(self, eps=1e-5, uniq_id=0):
+        super(U2IBatchNormalization, self).__init__(uniq_id=uniq_id)
         self.uniq_id = uniq_id
         self.eps = eps
 
     def make_node(self, x):
         x = T.as_tensor_variable(x)
-        if x.ndim != 4:
+        if x.type.ndim != 4:
             raise TypeError('The input should be a 4-dim tensor.')
         return Apply(self, [x], [x.type()])
 
@@ -1308,52 +1268,42 @@ class U2IBatchNormalization(MKLOp):
                 CHECK_ERR( dnnBatchNormalizationCreateForward_%(precision)s(&primitive, NULL, layout_usr, %(eps)s), err);
                 CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_internal, primitive, dnnResourceSrc), err );
 
-                if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_internal))
-                {
-                    if (NULL == to_internal)
-                    {
+                if (!dnnLayoutCompare_%(precision)s(layout_usr, layout_internal)) {
+                    if (NULL == to_internal) {
                         CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_usr, layout_internal), err );
                     }
                 }
             }
 
-            if (NULL == %(z)s)
-            {
+            if (NULL == %(z)s) {
                 //Create PyArrayObject for output
                 %(z)s = (PyArrayObject*)PyArray_ZEROS(DIMENSION, PyArray_DIMS(%(x)s), PyArray_TYPE(%(x)s), 0);
 
-                if (NULL == %(z)s)
-                {
+                if (NULL == %(z)s) {
                     %(fail)s
                 }
 
-                if (NULL == internal_ptr)
-                {
+                if (NULL == internal_ptr) {
                     CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&internal_ptr, layout_internal), err );
                 }
             }
 
-            if (to_internal)
-            {
+            if (to_internal) {
                 convert_resources[dnnResourceFrom] = (PyArray_DATA(%(x)s));
                 convert_resources[dnnResourceTo] = (void*)(internal_ptr);
                 CHECK_ERR( dnnExecute_%(precision)s(to_internal, convert_resources), err );
-            }
-            else
-            {
+            } else {
                 internal_ptr = (PyArray_DATA(%(x)s));
             }
-            if (layout_internal != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
-            {
+
+            if (layout_internal != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0]) {
                 ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_internal;
             }
-            if (internal_ptr != ((void**)PyArray_DATA(%(z)s))[1])
-            {
+
+            if (internal_ptr != ((void**)PyArray_DATA(%(z)s))[1]) {
                 ((void**)PyArray_DATA(%(z)s))[1] = internal_ptr;
             }
-
             first_run = 0;
-
             #ifdef _MKL_DEBUG_
                 printf(\"U2IBatchNormalization: From buffer %%x to buffer %%x\\n\", convert_resources[dnnResouceFrom], convert_resources[dnnResourceTo]);
             #endif

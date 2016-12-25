@@ -14,9 +14,9 @@ class AbstractLRN(gof.Op):
         self.slope = slope
 
     def make_node(self, x):
+        x = tensor.as_tensor_variable(x)
         if x.type.ndim != 4:
             raise TypeError()
-        x = tensor.as_tensor_variable(x)
         return gof.Apply(self, [x], [x.type()])
 
     def grad(self, inp, grads):
@@ -28,9 +28,9 @@ class AbstractLRN(gof.Op):
                                 k=self.k,
                                 n=self.n)(x, gz)]
 
-    def perform(self, node, inp, out_):
+    def perform(self, node, inp, out):
         x, = inp
-        z, = out_
+        z, = out
 
 
 class AbstractLRNGrad(gof.Op):
@@ -45,15 +45,14 @@ class AbstractLRNGrad(gof.Op):
         self.fp = fp
 
     def make_node(self, x, gz):
+        x = tensor.as_tensor_variable(x)
         if x.type.ndim != 4:
             raise TypeError()
-        x = tensor.as_tensor_variable(x)
         return gof.Apply(self, [x, gz], [x.type()])
 
-    def perform(self, node, inp, out_):
+    def perform(self, node, inp, out):
         x, gz = inp
-        gx, = out_
-        # gx = gz
+        gx, = out
 
 
 class LRN(basic_ops.MKLOp):
@@ -88,9 +87,9 @@ class LRN(basic_ops.MKLOp):
         self.fp = 'p_lrn' + str(uniq_id)
 
     def make_node(self, x):
+        x = tensor.as_tensor_variable(x)
         if x.type.ndim != 4:
             raise TypeError()
-        x = tensor.as_tensor_variable(x)
         return gof.Apply(self, [x], [x.type()])
 
     def grad(self, inp, grads):
@@ -179,7 +178,7 @@ class LRN(basic_ops.MKLOp):
             std::cout<<"lrn fwd start\\n";
             #endif
             ((void **)PyArray_DATA(%(x)s))[2] = (void *)bp;
-            if(first_run){
+            if(first_run) {
                 typenum = PyArray_ObjectType((PyObject*)%(x)s, 0);
                 x_bs = PyArray_DIMS(%(x)s)[0];
                 x_channels = PyArray_DIMS(%(x)s)[1];
@@ -196,8 +195,7 @@ class LRN(basic_ops.MKLOp):
             }
             if ((!%(lrn_fwd_out)s)
               ||(PyArray_DIMS(%(lrn_fwd_out)s)[0] != PyArray_DIMS(%(x)s)[0])
-              ||(PyArray_DIMS(%(lrn_fwd_out)s)[1] != PyArray_DIMS(%(x)s)[1]))
-            {
+              ||(PyArray_DIMS(%(lrn_fwd_out)s)[1] != PyArray_DIMS(%(x)s)[1])) {
               if(%(lrn_fwd_out)s) Py_XDECREF(%(lrn_fwd_out)s);
               npy_intp dims[4] = {0, 0, 0, 0};
               dims[0] = PyArray_DIMS(%(x)s)[0];
@@ -211,49 +209,51 @@ class LRN(basic_ops.MKLOp):
             layout_previous_layer = ((dnnLayout_t *)PyArray_DATA(%(x)s))[0];
 
             dtype_%(lrn_fwd_out)s *output = (dtype_%(lrn_fwd_out)s *)PyArray_DATA(%(lrn_fwd_out)s);
-            if(first_run){
+            if(first_run) {
                 //fake a fwd bottom internal layout, should be passed from previous layer
-                if (E_SUCCESS != dnnLayoutCreate_%(precision)s(&fwd_bottom_data_int_l, dim, sizes, strides)){
-                  std::cout<<"fwd_bottom_data_int_l creat fail\\n";
+                if (E_SUCCESS != dnnLayoutCreate_%(precision)s(&fwd_bottom_data_int_l, dim, sizes, strides)) {
+                    std::cout<<"fwd_bottom_data_int_l creat fail\\n";
                 }
                 // These 4 usr layouts should be inited once
-                if (E_SUCCESS != dnnLayoutCreate_%(precision)s(&fwd_bottom_data_usr_l, dim, sizes, strides)){
-                  std::cout<<"fwd_bottom_data_usr_l creat fail\\n";
+                if (E_SUCCESS != dnnLayoutCreate_%(precision)s(&fwd_bottom_data_usr_l, dim, sizes, strides)) {
+                    std::cout<<"fwd_bottom_data_usr_l creat fail\\n";
                 }
-                if (E_SUCCESS != dnnLayoutCreate_%(precision)s(&fwd_top_data_usr_l, dim, sizes, strides)){
-                  std::cout<<"fwd_top_data_usr_l creat fail\\n";
+                if (E_SUCCESS != dnnLayoutCreate_%(precision)s(&fwd_top_data_usr_l, dim, sizes, strides)) {
+                    std::cout<<"fwd_top_data_usr_l creat fail\\n";
                 }
 
-                if (E_SUCCESS != dnnLRNCreateForward_%(precision)s(&lrnFwd, NULL, layout_previous_layer, %(size)s, %(alpha)s, %(beta)s, %(k)s)){
+                if (E_SUCCESS != dnnLRNCreateForward_%(precision)s(&lrnFwd, NULL, layout_previous_layer, %(size)s, %(alpha)s, %(beta)s, %(k)s)) {
                     std::cout<<"lrn fwd creat fail\\n";
                     std::cout<<"layout from previous layer "<<layout_previous_layer<<std::endl;
                     std::cout<<"size: "<<%(size)s<<", alpha: "<<%(alpha)s<<", beta: "<<%(beta)s<<", k: "<<%(k)s<<std::endl;
                 }
 
-                if (E_SUCCESS != dnnLayoutCreateFromPrimitive_%(precision)s(&fwd_top_data_int_l, lrnFwd, dnnResourceDst)){
+                if (E_SUCCESS != dnnLayoutCreateFromPrimitive_%(precision)s(&fwd_top_data_int_l, lrnFwd, dnnResourceDst)) {
                   std::cout<<"fwd_top_data_int_l creat fail\\n";
                 }
 
                 if (fwd_top_data_int_l && !dnnLayoutCompare_%(precision)s(fwd_top_data_usr_l, fwd_top_data_int_l)) {
                     //std::cout<<"fwd layout conversion\\n";
                     e = dnnConversionCreate_%(precision)s(&fwd_top_convert_to_int, fwd_top_data_usr_l,fwd_top_data_int_l);
-                    if (e != E_SUCCESS){
-                      std::cout<<"dnnConversionCreate_%(precision)s fail with e "<<e<<std::endl;
+                    if (e != E_SUCCESS) {
+                        std::cout<<"dnnConversionCreate_%(precision)s fail with e "<<e<<std::endl;
                     }
                     e = dnnConversionCreate_%(precision)s(&fwd_top_convert_from_int, fwd_top_data_int_l,fwd_top_data_usr_l);
-                    if (e != E_SUCCESS){
-                      std::cout<<"dnnConversionCreate_%(precision)s i2u fail with e "<<e<<std::endl;
+                    if (e != E_SUCCESS) {
+                        std::cout<<"dnnConversionCreate_%(precision)s i2u fail with e "<<e<<std::endl;
                     }
                 }
 
                 e = dnnLayoutCreateFromPrimitive_%(precision)s(&lrn_buffer_l, lrnFwd, dnnResourceWorkspace);
-                if (e != E_SUCCESS){
-                  std::cout<<"dnnLayoutCreateFromPrimitive_%(precision)s fail\\n";
+                if (e != E_SUCCESS) {
+                    std::cout<<"dnnLayoutCreateFromPrimitive_%(precision)s fail\\n";
                 }
+
                 e = dnnAllocateBuffer_%(precision)s(reinterpret_cast<void **>(&lrn_buffer), lrn_buffer_l);
-                if (e != E_SUCCESS){
-                  std::cout<<"allocate lrn buffer fail with e code "<<e<<std::endl;
+                if (e != E_SUCCESS) {
+                    std::cout<<"allocate lrn buffer fail with e code "<<e<<std::endl;
                 }
+
                 dnnLayoutDelete_%(precision)s(lrn_buffer_l);
                 ((void**)bp)[0] = lrn_buffer;
             }
@@ -261,7 +261,7 @@ class LRN(basic_ops.MKLOp):
             if (NULL == buffer) {
                 e = dnnAllocateBuffer_%(precision)s(&buffer, layout_previous_layer);
                 if (E_SUCCESS != e){
-                  std::cout<<"fwd bn allocate fail with error code "<<e<<std::endl;
+                    std::cout<<"fwd bn allocate fail with error code "<<e<<std::endl;
                 }
             }
 
@@ -270,9 +270,10 @@ class LRN(basic_ops.MKLOp):
             ((dnnLayout_t*)output)[0] = layout_previous_layer;
             ((void**)output)[1] = buffer;
             lrn_res[dnnResourceWorkspace] = lrn_buffer;
-            if (E_SUCCESS != dnnExecute_%(precision)s(lrnFwd, lrn_res)){
-              std::cout<<"fwd execute fail"<<std::endl;
+            if (E_SUCCESS != dnnExecute_%(precision)s(lrnFwd, lrn_res)) {
+                std::cout<<"fwd execute fail"<<std::endl;
             }
+
             first_run=0;
             #if __DEBUG__
             std::cout<<"lrn fwd end\\n"<<std::endl;
@@ -309,7 +310,7 @@ class LRNGrad(basic_ops.MKLOp):
         self.fp = fp
 
     def c_headers(self):
-        return ['<math.h>', '<fstream>']  # FIXME
+        return ['<math.h>', '<fstream>']
 
     def c_lib_dirs(self):
         return ldflags(libs=False, libs_dir=True)
@@ -395,8 +396,7 @@ class LRNGrad(basic_ops.MKLOp):
             std::cout<<"lrn bwd start\\n";
             #endif
             ip = ((void**)PyArray_DATA(%(x)s))[2];
-            if(first_run){
-                //std::cout<<"LRN Bwd init "<<std::endl;
+            if(first_run) {
                 typenum = PyArray_ObjectType((PyObject*)%(x)s, 0);
                 x_bs = PyArray_DIMS(%(x)s)[0];
                 x_channels = PyArray_DIMS(%(x)s)[1];
@@ -411,43 +411,41 @@ class LRNGrad(basic_ops.MKLOp):
                 strides[1] = sizes[0];
                 strides[2] = sizes[0]*sizes[1];
                 strides[3] = sizes[0]*sizes[1]*sizes[2];
-                if (E_SUCCESS != dnnLayoutCreate_%(precision)s(&bwd_bottom_diff_usr_l, dim, sizes, strides)){
-                  std::cout<<"bwd_bottom_diff_usr_l creat fail\\n";
+                if (E_SUCCESS != dnnLayoutCreate_%(precision)s(&bwd_bottom_diff_usr_l, dim, sizes, strides)) {
+                    std::cout<<"bwd_bottom_diff_usr_l creat fail\\n";
                 }
-                if (E_SUCCESS != dnnLayoutCreate_%(precision)s(&bwd_top_diff_usr_l, dim, sizes, strides)){
-                  std::cout<<"bwd_top_diff_usr_l creat fail\\n";
+                if (E_SUCCESS != dnnLayoutCreate_%(precision)s(&bwd_top_diff_usr_l, dim, sizes, strides)) {
+                    std::cout<<"bwd_top_diff_usr_l creat fail\\n";
                 }
                 layout_previous_layer = ((dnnLayout_t *)PyArray_DATA(%(x)s))[0];
             }
             if ((!%(z)s)
-              ||(PyArray_DIMS(%(z)s)[0] != PyArray_DIMS(%(x)s)[0])
-              ||(PyArray_DIMS(%(z)s)[1] != PyArray_DIMS(%(x)s)[1])
-              )
-            {
-              if(%(z)s) Py_XDECREF(%(z)s);
-            npy_intp dims[4] = {0, 0, 0, 0};
-            dims[0] = x_bs;
-            dims[1] = x_channels;
-            dims[2] = x_row;
-            dims[3] = x_col;
-              //TODO: zeros not necessary
-              %(z)s = (PyArrayObject*) PyArray_ZEROS(4, dims, typenum, 0);
+                ||(PyArray_DIMS(%(z)s)[0] != PyArray_DIMS(%(x)s)[0])
+                ||(PyArray_DIMS(%(z)s)[1] != PyArray_DIMS(%(x)s)[1])) {
+                if(%(z)s) Py_XDECREF(%(z)s);
+                npy_intp dims[4] = {0, 0, 0, 0};
+                dims[0] = x_bs;
+                dims[1] = x_channels;
+                dims[2] = x_row;
+                dims[3] = x_col;
+                //TODO: zeros not necessary
+                %(z)s = (PyArrayObject*) PyArray_ZEROS(4, dims, typenum, 0);
             }
 
             input_x = ((void **)PyArray_DATA(%(x)s))[1];
             dtype_%(z)s *output = (dtype_%(z)s *)PyArray_DATA(%(z)s);
             input_gz = ((void**)PyArray_DATA(%(gz)s))[1];
-            if(first_run){
+            if(first_run) {
                 if (E_SUCCESS != dnnLRNCreateBackward_%(precision)s(&lrnBwd, NULL,layout_previous_layer,
-                layout_previous_layer,%(size)s, %(alpha)s, %(beta)s, %(k)s)){
+                layout_previous_layer,%(size)s, %(alpha)s, %(beta)s, %(k)s)) {
                     std::cout<<"lrn bwd creat fail\\n";
                 }
             }
 
             if (NULL == buffer) {
                 e = dnnAllocateBuffer_%(precision)s(&buffer, layout_previous_layer);
-                if (E_SUCCESS != e){
-                  std::cout<<"bwd bn allocate fail with error code "<<e<<std::endl;
+                if (E_SUCCESS != e) {
+                    std::cout<<"bwd bn allocate fail with error code "<<e<<std::endl;
                 }
             }
 
@@ -460,10 +458,10 @@ class LRNGrad(basic_ops.MKLOp):
             ((void**)output)[1] = buffer;
 
             e = dnnExecute_%(precision)s(lrnBwd, lrn_res);
-            if (E_SUCCESS != e){
+            if (E_SUCCESS != e) {
                 std::cout<<"bwd execute fail with error code "<<e<<std::endl;
             }
-            first_run=0;
+            first_run = 0;
             #if __DEBUG__
             std::cout<<"lrn bwd end\\n"<<std::endl;
             #endif

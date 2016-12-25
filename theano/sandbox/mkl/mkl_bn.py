@@ -71,6 +71,7 @@ class BatchNormalization(basic_ops.MKLOp):
     __props__ = ('eps', 'bias', 'term', 'inplace', 'train_stage')
 
     def __init__(self, eps=1e-5, bias=1, term=1, inplace=1, train_stage=1, uniq_id=1):
+        super(BatchNormalization, self).__init__(uniq_id=uniq_id)
         self.eps = eps
         self.bias = bias
         self.term = term
@@ -129,12 +130,20 @@ class BatchNormalization(basic_ops.MKLOp):
         """
 
     def c_code_cleanup_struct(self, node, name, input_names, output_names, sub):
+        dtype = node.inputs[0].type.dtype
+        assert dtype in ('float32', 'float64')
+
+        if dtype is 'float32':
+            precision = 'F32'
+        else:
+            precision = 'F64'
+
         return """
-        dnnReleaseBuffer_F32(buffer);
-        dnnReleaseBuffer_F32(bn_buffer);
-        dnnReleaseBuffer_F32(scaleShift_buffer);
+        dnnReleaseBuffer_%s(buffer);
+        dnnReleaseBuffer_%s(bn_buffer);
+        dnnReleaseBuffer_%s(scaleShift_buffer);
         mkl_free(input_copy);
-        """
+        """ % precision
 
     def c_code(self, node, name, inp, out, sub):
         x, scale, shift, = inp
@@ -145,20 +154,19 @@ class BatchNormalization(basic_ops.MKLOp):
         uid = self.uniq_id
         inplace = self.inplace
         train_stage = self.train_stage
+
+        dtype = node.inputs[0].type.dtype
+        assert dtype in ('float32', 'float64')
+
+        if dtype is 'float32':
+            precision = 'F32'
+        else:
+            precision = 'F64'
+
         ret = """
         {
-            #if __DEBUG__
-            std::cout<<"theano bn fwd input x\\n";
-            float* input_p = ((float **)PyArray_DATA(%(x)s))[1];
-            for(int i=0;i<10;i++){
-                std::cout<<input_p[i]<<",";
-            }
-            std::cout<<std::endl;
-            std::cout<<"bn fwd start "<<std::dec<<%(uid)s<<std::endl;
-            #endif
-
             ((void **)PyArray_DATA(%(x)s))[2] = (void*)bp;
-            if(first_run){
+            if(first_run) {
                 typenum = PyArray_ObjectType((PyObject*)%(x)s, 0);
                 x_bs = PyArray_DIMS(%(x)s)[0];
                 x_channels = PyArray_DIMS(%(x)s)[1];
@@ -179,10 +187,8 @@ class BatchNormalization(basic_ops.MKLOp):
                 }
             }
 
-            if ((!%(bn_fwd_out)s)
-              ||(PyArray_DIMS(%(bn_fwd_out)s)[0] != PyArray_DIMS(%(x)s)[0])
-              ||(PyArray_DIMS(%(bn_fwd_out)s)[1] != PyArray_DIMS(%(x)s)[1]))
-            {
+            if ((!%(bn_fwd_out)s) || (PyArray_DIMS(%(bn_fwd_out)s)[0] != PyArray_DIMS(%(x)s)[0]) ||
+                (PyArray_DIMS(%(bn_fwd_out)s)[1] != PyArray_DIMS(%(x)s)[1])) {
                 if(%(bn_fwd_out)s) Py_XDECREF(%(bn_fwd_out)s);
                 npy_intp dims[4] = {0, 0, 0, 0};
                 dims[0] = PyArray_DIMS(%(x)s)[0];
@@ -195,46 +201,47 @@ class BatchNormalization(basic_ops.MKLOp):
             input = ((void **)PyArray_DATA(%(x)s))[1];
             layout_previous_layer = ((dnnLayout_t *)PyArray_DATA(%(x)s))[0];
             dtype_%(bn_fwd_out)s *output = (dtype_%(bn_fwd_out)s *)PyArray_DATA(%(bn_fwd_out)s);
-            if(first_run){
-                if (E_SUCCESS != dnnBatchNormalizationCreateForward_F32(&bnFwd, NULL, layout_previous_layer, %(eps)s)){
+            if(first_run) {
+                e = dnnBatchNormalizationCreateForward_%(precision)s(&bnFwd, NULL, layout_previous_layer, %(eps)s);
+                if (E_SUCCESS != e) {
                     std::cout<<"bn fwd creat fail\\n";
                     std::cout<<"layout from previous layer "<<layout_previous_layer<<std::endl;
                 }
 
                 //create fwd output internal layout
-                e = dnnLayoutCreateFromPrimitive_F32(&fwd_top_l, bnFwd, dnnResourceDst);
-                if (e != E_SUCCESS){
-                    std::cout<<"dnnLayoutCreateFromPrimitive_F32 fail\\n";
+                e = dnnLayoutCreateFromPrimitive_%(precision)s(&fwd_top_l, bnFwd, dnnResourceDst);
+                if (e != E_SUCCESS) {
+                    std::cout<<"dnnLayoutCreateFromPrimitive fail\\n";
                 }
                 //create bwd input internal layout
-                e = dnnLayoutCreateFromPrimitive_F32(&bwd_top_l, bnFwd, dnnResourceDst);
-                if (e != E_SUCCESS){
-                    std::cout<<"dnnLayoutCreateFromPrimitive_F32 fail\\n";
+                e = dnnLayoutCreateFromPrimitive_%(precision)s(&bwd_top_l, bnFwd, dnnResourceDst);
+                if (e != E_SUCCESS) {
+                    std::cout<<"dnnLayoutCreateFromPrimitive fail\\n";
                 }
                 //create bwd output internal layout
-                e = dnnLayoutCreateFromPrimitive_F32(&bwd_bottom_l, bnFwd, dnnResourceSrc);
-                if (e != E_SUCCESS){
-                    std::cout<<"dnnLayoutCreateFromPrimitive_F32 fail\\n";
+                e = dnnLayoutCreateFromPrimitive_%(precision)s(&bwd_bottom_l, bnFwd, dnnResourceSrc);
+                if (e != E_SUCCESS) {
+                    std::cout<<"dnnLayoutCreateFromPrimitive fail\\n";
                 }
-                e = dnnLayoutCreateFromPrimitive_F32(&bn_buffer_l, bnFwd, dnnResourceWorkspace);
-                if (e != E_SUCCESS){
-                    std::cout<<"dnnLayoutCreateFromPrimitive_F32 fail\\n";
+                e = dnnLayoutCreateFromPrimitive_%(precision)s(&bn_buffer_l, bnFwd, dnnResourceWorkspace);
+                if (e != E_SUCCESS) {
+                    std::cout<<"dnnLayoutCreateFromPrimitive fail\\n";
                 }
-                e = dnnAllocateBuffer_F32(reinterpret_cast<void **>(&bn_buffer), bn_buffer_l);
-                if (e != E_SUCCESS){
+                e = dnnAllocateBuffer_%(precision)s(reinterpret_cast<void **>(&bn_buffer), bn_buffer_l);
+                if (e != E_SUCCESS) {
                     std::cout<<"allocate bn buffer fail with e code "<<e<<std::endl;
                 }
 
-                e = dnnLayoutCreateFromPrimitive_F32(&scaleShift_buffer_l, bnFwd, dnnResourceScaleShift);
-                if (e != E_SUCCESS){
-                    std::cout<<"dnnLayoutCreateFromPrimitive_F32 fail\\n";
+                e = dnnLayoutCreateFromPrimitive_%(precision)s(&scaleShift_buffer_l, bnFwd, dnnResourceScaleShift);
+                if (e != E_SUCCESS) {
+                    std::cout<<"dnnLayoutCreateFromPrimitive fail\\n";
                 }
-                e = dnnAllocateBuffer_F32(reinterpret_cast<void**>(&scaleShift_buffer), scaleShift_buffer_l);
-                if (e != E_SUCCESS){
+                e = dnnAllocateBuffer_%(precision)s(reinterpret_cast<void**>(&scaleShift_buffer), scaleShift_buffer_l);
+                if (e != E_SUCCESS) {
                     std::cout<<"allocate bn buffer fail with e code "<<e<<std::endl;
                 }
-                dnnLayoutDelete_F32(scaleShift_buffer_l);
-                dnnLayoutDelete_F32(bn_buffer_l);
+                dnnLayoutDelete_%(precision)s(scaleShift_buffer_l);
+                dnnLayoutDelete_%(precision)s(bn_buffer_l);
                 ((void**)bp)[0] = bn_buffer;
                 ((void**)bp)[1] = scaleShift_buffer;
                 ((void**)bp)[2] = bwd_bottom_l;
@@ -244,16 +251,16 @@ class BatchNormalization(basic_ops.MKLOp):
                             std::cout<<"scale init failed! "<<((float*)scaleShift_buffer)[i]<<std::endl;
                             exit(0);
                         }
-                        if(((float*)scaleShift_buffer)[x_channels + i] != 0){
+                        if(((float*)scaleShift_buffer)[x_channels + i] != 0) {
                             std::cout<<"shift init failed!"<<std::endl;
-                            exit(0);
+                            exit(1);
                         }
                     }
                 }
             }
             if ((NULL == buffer) || (first_run)) {
-                e = dnnAllocateBuffer_F32(&buffer, layout_previous_layer);
-                if (E_SUCCESS != e){
+                e = dnnAllocateBuffer_%(precision)s(&buffer, layout_previous_layer);
+                if (E_SUCCESS != e) {
                     std::cout<<"fwd bn allocate fail with error code "<<e<<std::endl;
                 }
             }
@@ -277,7 +284,7 @@ class BatchNormalization(basic_ops.MKLOp):
             ((void**)output)[1] = buffer;
             bn_res[dnnResourceWorkspace] = bn_buffer;
             bn_res[dnnResourceScaleShift] = scaleShift_buffer;
-            if (E_SUCCESS != dnnExecute_F32(bnFwd, bn_res)){
+            if (E_SUCCESS != dnnExecute_%(precision)s(bnFwd, bn_res)) {
                 std::cout<<"bn fwd execute fail"<<std::endl;
             }
             first_run = 0;
@@ -296,16 +303,25 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
     __props__ = ('eps', 'bias', 'term')
 
     def __init__(self, eps=1e-5, bias=1, term=1, uniq_id=1):
+        super(BatchNormalizationGrad, self).__init__(uniq_id=uniq_id)
         self.eps = eps
         self.bias = bias
         self.term = term
         self.uniq_id = uniq_id
 
     def c_code_cleanup_struct(self, node, name, input_names, output_names, sub):
+        dtype = node.inputs[0].type.dtype
+        assert dtype in ('float32', 'float64')
+
+        if dtype is 'float32':
+            precision = 'F32'
+        else:
+            precision = 'F64'
+
         return """
         std::cout<<"releasing buffer\\n";
-        dnnReleaseBuffer_F32(buffer);
-        """
+        dnnReleaseBuffer_%s(buffer);
+        """ % precision
 
     def c_support_code(self):
         return mkl_helper.header_text() + """
@@ -340,10 +356,10 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
         """
 
     def make_node(self, x, gz, scale, shift):
-        assert isinstance(x, Variable) and x.ndim == 4
-        assert isinstance(gz, Variable) and gz.ndim == 4
         scale = as_tensor_variable(scale)
         shift = as_tensor_variable(shift)
+        assert isinstance(x, Variable) and x.ndim == 4
+        assert isinstance(gz, Variable) and gz.ndim == 4
         return gof.Apply(self, [x, gz, scale, shift], [x.type(), scale.type(), shift.type()])
 
     def c_code(self, node, name, inp, out, sub):
@@ -353,25 +369,18 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
         bias = self.bias
         term = self.term
         uid = self.uniq_id
+
+        dtype = node.inputs[0].type.dtype
+        assert dtype in ('float32', 'float64')
+        if dtype is 'float32':
+            precision = 'F32'
+        else:
+            precision = 'F64'
+
         ret = """
         {
-            #if __DEBUG__
-            std::cout<<"bn bwd start "<<std::dec<<%(uid)s<<std::endl;
-            printf(\"theano bn bwd inpugz:%%x\\n\", %(gz)s);
-            float* p = ((float**)(PyArray_DATA(%(gz)s)))[1];
-            for(int i = 0; i < 10; i++){
-                std::cout<<p[i]<<",";
-            }
-            printf(\"\\n\");
-            std::cout<<"theano bn bwd input x\\n";
-            p = ((float**)(PyArray_DATA(%(x)s)))[1];
-            for(int i = 0; i < 10; i++){
-                std::cout<<p[i]<<",";
-            }
-            printf(\"\\n\");
-            #endif
             ip = ((void**)PyArray_DATA(%(x)s))[2];
-            if(first_run){
+            if(first_run) {
                 typenum = PyArray_ObjectType((PyObject*)%(x)s, 0);
                 x_bs = PyArray_DIMS(%(x)s)[0];
                 x_channels = PyArray_DIMS(%(x)s)[1];
@@ -391,8 +400,7 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
 
             if ((!%(z)s)
               ||(PyArray_DIMS(%(z)s)[0] != PyArray_DIMS(%(x)s)[0])
-              ||(PyArray_DIMS(%(z)s)[1] != PyArray_DIMS(%(x)s)[1]))
-            {
+              ||(PyArray_DIMS(%(z)s)[1] != PyArray_DIMS(%(x)s)[1])) {
                 if(%(z)s) Py_XDECREF(%(z)s);
                 npy_intp dims[4] = {0, 0, 0, 0};
                 dims[0] = x_bs;
@@ -411,12 +419,13 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
             dtype_%(z)s *output = (dtype_%(z)s*)PyArray_DATA(%(z)s);
             input_gz = ((void**)PyArray_DATA(%(gz)s))[1];
 
-            if(first_run){
-                if (E_SUCCESS != dnnBatchNormalizationCreateBackwardData_F32(&bnBwd, NULL, layout_previous_layer, %(eps)s)){
+            if(first_run) {
+                e = dnnBatchNormalizationCreateBackwardData_%(precision)s(&bnBwd, NULL, layout_previous_layer, %(eps)s);
+                if (E_SUCCESS != e) {
                     std::cout<<"bn bwd creat fail\\n";
                 }
                 if (%(bias)s) {
-                    e = dnnBatchNormalizationCreateBackwardScaleShift_F32(&batchNormBwdScaleShift, NULL, layout_previous_layer, %(eps)s);
+                    e = dnnBatchNormalizationCreateBackwardScaleShift_%(precision)s(&batchNormBwdScaleShift, NULL, layout_previous_layer, %(eps)s);
                     %(g_scale)s = (PyArrayObject*)PyArray_ZEROS(PyArray_NDIM(%(scale)s),
                                                                PyArray_DIMS(%(scale)s),
                                                                PyArray_TYPE(%(scale)s),
@@ -433,7 +442,7 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
                     g_shift_buffer_ptr = (float*)PyArray_DATA(%(g_shift)s);
                 }
                 if (NULL == buffer) {
-                    e = dnnAllocateBuffer_F32(&buffer, ((dnnLayout_t*)ip)[2]);
+                    e = dnnAllocateBuffer_%(precision)s(&buffer, ((dnnLayout_t*)ip)[2]);
                     if (E_SUCCESS != e) {
                         std::cout<<"bwd bn allocate fail with error code "<<e<<std::endl;
                     }
@@ -448,67 +457,38 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
 
             ((dnnLayout_t*)output)[0] = layout_previous_layer;
             ((void**)output)[1] = buffer;
-            e = dnnExecute_F32(bnBwd, bn_res);
-            if (E_SUCCESS != e){
+            e = dnnExecute_%(precision)s(bnBwd, bn_res);
+            if (E_SUCCESS != e) {
                 std::cout<<"theano bwd execute fail with error code "<<e<<std::endl;
             }
 
-            if(first_run){
-                if(!dnnLayoutCompare_F32(((dnnLayout_t*)ip)[2], layout_previous_layer))
-                {
-                    if(z_buffer==NULL){
-                        e = dnnAllocateBuffer_F32(&z_buffer, layout_previous_layer);
+            if(first_run) {
+                if(!dnnLayoutCompare_%(precision)s(((dnnLayout_t*)ip)[2], layout_previous_layer)) {
+                    if(z_buffer==NULL) {
+                        e = dnnAllocateBuffer_%(precision)s(&z_buffer, layout_previous_layer);
                     }
                     if (NULL == convert_int2int_topgrad_for_weight) {
-                        dnnConversionCreate_F32(&convert_int2int_topgrad_for_weight, ((dnnLayout_t*)ip)[2], layout_previous_layer);
+                        dnnConversionCreate_%(precision)s(&convert_int2int_topgrad_for_weight, ((dnnLayout_t*)ip)[2], layout_previous_layer);
                     }
                     if (NULL != convert_int2int_topgrad_for_weight) {
-                        dnnConversionExecute_F32(convert_int2int_topgrad_for_weight, buffer, z_buffer);
+                        dnnConversionExecute_%(precision)s(convert_int2int_topgrad_for_weight, buffer, z_buffer);
                         ((void**)output)[1] = z_buffer;
                         std::cout<<"theano bn zbuffer\\n";
                     }
                 }
             }
 
-            #if 0
-            static int count = 0;
-            if (count == 0){
-                std::cout<<"theano bn bwd data grad"<<std::endl;
-                std::ofstream myfile1;
-                myfile1.open ("theano_bn_bwd_grad.txt", std::ios_base::app);
-                for(int i = 0; i < data_size; i++) {
-                    if(z_buffer){
-                        myfile1<<((float*)z_buffer)[i]<<std::endl;
-                    }else{
-                        myfile1<<((float*)buffer)[i]<<std::endl;
-                    }
-                }
-                myfile1<<std::endl;
-                myfile1.close();
-                count++;
-            }
-            #endif
-
-            if (%(bias)s){
+            if (%(bias)s) {
                 BatchNormBwdScaleShift_res[dnnResourceSrc] = (void*)input_x;
                 BatchNormBwdScaleShift_res[dnnResourceWorkspace] = ((void**)ip)[0];
                 BatchNormBwdScaleShift_res[dnnResourceDiffScaleShift] = ((void**)ip)[1];
                 BatchNormBwdScaleShift_res[dnnResourceDiffDst] = (void*)input_gz;
-                e = dnnExecute_F32(batchNormBwdScaleShift, BatchNormBwdScaleShift_res);
-                //CHECK_EQ(e, E_SUCCESS);
-                // Store grad of ScaleShift to grad output for update
-
-                #if __DEBUG__
-                std::cout<<"theano bn bwd scaleshift buffer "<<std::hex<<((float**)ip)[1]<<std::endl;
-                #endif
+                e = dnnExecute_%(precision)s(batchNormBwdScaleShift, BatchNormBwdScaleShift_res);
 
                 for (int i = 0; i < x_channels; i++) {
                     g_scale_buffer_ptr[i] = (((float**)ip)[1])[i];
                     g_shift_buffer_ptr[i] = 0;
                     if (%(term)s) {
-                        #if __DEBUG__
-                        //myfile2<<g_shift_buffer_ptr[i]<<std::endl;
-                        #endif
                         g_shift_buffer_ptr[i] =  (((float**)ip)[1])[x_channels + i];
                     }
                 }
