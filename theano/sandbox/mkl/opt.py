@@ -60,23 +60,29 @@ class CutMKLDataConversionChain(Optimizer):
         list_backward = ['ReluGrad', 'PoolGrad', 'ConvGradInputs', 'ConvGradWeights', 'LRNGrad', 'ElemwiseSum']
         list_i2u_back = ['I2UGrad', 'U2IElemwiseSum']
         list_u2i_back = ['U2IGrad', 'I2U']
-        for node in fgraph.toposort():
-            # backward
-            if node.op.__class__.__name__ in list_i2u_back:
-                out = node.outputs[0]
-                for inp in node.inputs:
-                    if isinstance(inp.owner, gof.Apply) and inp.owner.op.__class__.__name__ in list_u2i_back:
-                        for inpOP in list(inp.owner.inputs):
-                            if isinstance(inpOP.owner, gof.Apply) and inpOP.owner.op.__class__.__name__ in list_backward:
-                                fgraph.replace_validate(out, inpOP.owner.outputs[0])
-            # forward
-            if node.op.__class__.__name__ in list_u2i:
-                out = node.outputs[0]
-                for inp in node.inputs:
-                    if isinstance(inp.owner, gof.Apply) and inp.owner.op.__class__.__name__ in list_i2u:
-                        for inpOP in list(inp.owner.inputs):
-                            if isinstance(inpOP.owner, gof.Apply) and inpOP.owner.op.__class__.__name__ in list_forward:
-                                fgraph.replace_validate(out, inpOP.owner.outputs[0])
+        try:
+            for node in fgraph.toposort():
+                # backward
+                if node.op.__class__.__name__ in list_i2u_back:
+                    out = node.outputs[0]
+                    for inp in node.inputs:
+                        if isinstance(inp.owner, gof.Apply) and inp.owner.op.__class__.__name__ in list_u2i_back:
+                            for inpOP in list(inp.owner.inputs):
+                                if isinstance(inpOP.owner, gof.Apply) and inpOP.owner.op.__class__.__name__ in list_backward:
+                                    fgraph.replace_validate(out, inpOP.owner.outputs[0])
+                # forward
+                if node.op.__class__.__name__ in list_u2i:
+                    out = node.outputs[0]
+                    for inp in node.inputs:
+                        if isinstance(inp.owner, gof.Apply) and inp.owner.op.__class__.__name__ in list_i2u:
+                            for inpOP in list(inp.owner.inputs):
+                                if isinstance(inpOP.owner, gof.Apply) and inpOP.owner.op.__class__.__name__ in list_forward:
+                                    fgraph.replace_validate(out, inpOP.owner.outputs[0])
+        except Exception as e:
+            msg = ('Failed to apply local opt to Op %s. '
+                   'Exception message: %s\n') % (node.op, str(e))
+            _logger.warning(msg)
+            return
 
 
 mkl_seqopt.register('CutMKLDataConversionChain', CutMKLDataConversionChain(),
