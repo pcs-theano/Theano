@@ -47,6 +47,10 @@ mkl_seqopt.register('mkl_local_optimizations', mkl_optimizer, 20,
 
 
 class CutMKLDataConversionChain(Optimizer):
+    """
+    This global optimizer used to cut the unless data layout transfer from user layout to MKL-DNN internal layout
+    from function graph, such as I2U + U2IConv.
+    """
     def __init__(self):
         Optimizer.__init__(self)
 
@@ -79,8 +83,8 @@ class CutMKLDataConversionChain(Optimizer):
                                 if isinstance(inpOP.owner, gof.Apply) and inpOP.owner.op.__class__.__name__ in list_forward:
                                     fgraph.replace_validate(out, inpOP.owner.outputs[0])
         except Exception as e:
-            msg = ('Failed to apply local opt to Op %s. '
-                   'Exception message: %s\n') % (node.op, str(e))
+            msg = ('Failed to apply global Cut.'
+                   'Exception message: %s\n') % str(e)
             _logger.warning(msg)
             return
 
@@ -667,19 +671,19 @@ def local_Conv2D_mkl(node):
         return
 
     try:
-        x, ws = node.inputs
-        x_internal = U2IConv(imshp=node.op.imshp,
-                             kshp=node.op.kshp,
-                             subsample=node.op.subsample,
-                             filter_dilation=node.op.filter_dilation,
-                             uniq_id=uniq_id)(x)
+        image, weight = node.inputs
+        image_internal = U2IConv(imshp=node.op.imshp,
+                                 kshp=node.op.kshp,
+                                 subsample=node.op.subsample,
+                                 filter_dilation=node.op.filter_dilation,
+                                 uniq_id=uniq_id)(image)
         convOut = mkl_conv.Conv2D(imshp=node.op.imshp,
                                   kshp=node.op.kshp,
                                   border_mode=node.op.border_mode,
                                   subsample=node.op.subsample,
                                   filter_flip=node.op.filter_flip,
                                   filter_dilation=node.op.filter_dilation,
-                                  uniq_id=uniq_id)(x_internal, ws)
+                                  uniq_id=uniq_id)(image_internal, weight)
         z_user = I2U(uniq_id=uniq_id)(convOut)
         reval = z_user
         return [reval]
@@ -708,27 +712,27 @@ def local_ConvGradInputs_mkl(node):
         return
 
     try:
-        ws, gz, topshp = node.inputs
-        x = node.inputs[2].owner.inputs[0].owner.inputs[0]
-        x_internal = U2IConv(imshp=node.op.imshp,
-                             kshp=node.op.kshp,
-                             subsample=node.op.subsample,
-                             filter_dilation=node.op.filter_dilation,
-                             uniq_id=uniq_id)(x)
+        weight, gz, zshp = node.inputs
+        image = node.inputs[2].owner.inputs[0].owner.inputs[0]
+        image_internal = U2IConv(imshp=node.op.imshp,
+                                 kshp=node.op.kshp,
+                                 subsample=node.op.subsample,
+                                 filter_dilation=node.op.filter_dilation,
+                                 uniq_id=uniq_id)(image)
         convOut = mkl_conv.Conv2D(imshp=node.op.imshp,
                                   kshp=node.op.kshp,
                                   border_mode=node.op.border_mode,
                                   subsample=node.op.subsample,
                                   filter_flip=node.op.filter_flip,
                                   filter_dilation=node.op.filter_dilation,
-                                  uniq_id=uniq_id)(x_internal, ws)
+                                  uniq_id=uniq_id)(image_internal, weight)
         gz_internal = I2UGrad(uniq_id=uniq_id)(convOut, gz)
-        dx = mkl_conv.ConvGradInputs(border_mode=node.op.border_mode,
-                                     subsample=node.op.subsample,
-                                     imshp=node.op.imshp,
-                                     kshp=node.op.kshp)(x_internal, ws, gz_internal)
-        dx_user = U2IGrad(uniq_id=uniq_id)(x, dx)
-        rval = dx_user
+        gradImage = mkl_conv.ConvGradInputs(border_mode=node.op.border_mode,
+                                            subsample=node.op.subsample,
+                                            imshp=node.op.imshp,
+                                            kshp=node.op.kshp)(image_internal, weight, gz_internal)
+        gradImage_user = U2IGrad(uniq_id=uniq_id)(image, gradImage)
+        rval = gradImage_user
         return [rval]
     except Exception as e:
         msg = ('Failed to apply local opt to Op %s. '
@@ -755,26 +759,26 @@ def local_ConvGradWeights_mkl(node):
         return
 
     try:
-        x, gz, topshp = node.inputs
-        ws = node.inputs[2].owner.inputs[0].owner.inputs[0]
-        x_internal = U2IConv(imshp=node.op.imshp,
-                             kshp=node.op.kshp,
-                             subsample=node.op.subsample,
-                             filter_dilation=node.op.filter_dilation,
-                             uniq_id=uniq_id)(x)
+        image, gz, zshp = node.inputs
+        weight = node.inputs[2].owner.inputs[0].owner.inputs[0]
+        image_internal = U2IConv(imshp=node.op.imshp,
+                                 kshp=node.op.kshp,
+                                 subsample=node.op.subsample,
+                                 filter_dilation=node.op.filter_dilation,
+                                 uniq_id=uniq_id)(image)
         convOut = mkl_conv.Conv2D(imshp=node.op.imshp,
                                   kshp=node.op.kshp,
                                   border_mode=node.op.border_mode,
                                   subsample=node.op.subsample,
                                   filter_flip=node.op.filter_flip,
                                   filter_dilation=node.op.filter_dilation,
-                                  uniq_id=uniq_id)(x_internal, ws)
+                                  uniq_id=uniq_id)(image_internal, weight)
         gz_internal = I2UGrad(uniq_id=uniq_id)(convOut, gz)
-        dw = mkl_conv.ConvGradWeights(border_mode=node.op.border_mode,
-                                      subsample=node.op.subsample,
-                                      imshp=node.op.imshp,
-                                      kshp=node.op.kshp)(x_internal, ws, gz_internal)
-        rval = dw
+        gradWeight = mkl_conv.ConvGradWeights(border_mode=node.op.border_mode,
+                                              subsample=node.op.subsample,
+                                              imshp=node.op.imshp,
+                                              kshp=node.op.kshp)(image_internal, weight, gz_internal)
+        rval = gradWeight
         return [rval]
     except Exception as e:
         msg = ('Failed to apply local opt to Op %s. '
