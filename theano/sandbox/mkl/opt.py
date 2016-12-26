@@ -587,8 +587,7 @@ def local_lrn_mkl(node):
 
     try:
         x, = node.inputs
-        x_u2i = U2ILRN(slope=node.op.slope,
-                       uniq_id=uniq_id,
+        x_u2i = U2ILRN(uniq_id=uniq_id,
                        alpha=node.op.alpha,
                        beta=node.op.beta,
                        k=node.op.k,
@@ -625,8 +624,7 @@ def local_lrnGrad_mkl(node):
 
     try:
         x, gz, = node.inputs
-        x_u2i = U2ILRN(slope=node.op.slope,
-                       uniq_id=uniq_id,
+        x_u2i = U2ILRN(uniq_id=uniq_id,
                        alpha=node.op.alpha,
                        beta=node.op.beta,
                        k=node.op.k,
@@ -641,8 +639,7 @@ def local_lrnGrad_mkl(node):
                                      alpha=node.op.alpha,
                                      beta=node.op.beta,
                                      k=node.op.k,
-                                     n=node.op.n,
-                                     fp=node.op.fp)(x_u2i, gz_u2i)
+                                     n=node.op.n)(x_u2i, gz_u2i)
         gx_i2u = U2IGrad(uniq_id=uniq_id)(x, lrnGradOut)
         rval = gx_i2u
         return [rval]

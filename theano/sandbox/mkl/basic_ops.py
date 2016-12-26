@@ -817,11 +817,10 @@ class I2UGrad(MKLOp):
 
 
 class U2ILRN(MKLOp):
-    __props__ = ('slope', 'alpha', 'beta', 'k', 'size')
+    __props__ = ('alpha', 'beta', 'k', 'size')
 
-    def __init__(self, slope=1, alpha=1e-4, beta=0.75, k=2, n=5, uniq_id=0):
+    def __init__(self, alpha=1e-4, beta=0.75, k=2, n=5, uniq_id=0):
         super(U2ILRN, self).__init__(uniq_id)
-        self.slope = slope
         self.alpha = alpha
         self.beta = beta
         self.k = k
@@ -843,7 +842,6 @@ class U2ILRN(MKLOp):
         x, = inp
         z, = out
 
-        slope = self.slope
         alpha = self.alpha
         beta = self.beta
         k = self.k

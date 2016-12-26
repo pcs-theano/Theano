@@ -4,14 +4,13 @@ from theano.sandbox.mkl import mkl_helper, basic_ops
 
 
 class AbstractLRN(gof.Op):
-    __props__ = ('slope', 'alpha', 'beta', 'k', 'n')
+    __props__ = ('alpha', 'beta', 'k', 'n')
 
-    def __init__(self, slope=1, alpha=1e-4, beta=0.75, k=2, n=5):
+    def __init__(self, alpha=1e-4, beta=0.75, k=2, n=5):
         self.alpha = alpha
         self.beta = beta
         self.k = k
         self.n = n
-        self.slope = slope
 
     def make_node(self, x):
         x = tensor.as_tensor_variable(x)
@@ -22,8 +21,7 @@ class AbstractLRN(gof.Op):
     def grad(self, inp, grads):
         x, = inp
         gz, = grads
-        return [AbstractLRNGrad(slope=self.slope,
-                                alpha=self.alpha,
+        return [AbstractLRNGrad(alpha=self.alpha,
                                 beta=self.beta,
                                 k=self.k,
                                 n=self.n)(x, gz)]
@@ -34,15 +32,13 @@ class AbstractLRN(gof.Op):
 
 
 class AbstractLRNGrad(gof.Op):
-    __props__ = ('slope', 'alpha', 'beta', 'k', 'n')
+    __props__ = ('alpha', 'beta', 'k', 'n')
 
-    def __init__(self, slope=1, alpha=1e-4, beta=0.75, k=2, n=5, fp='default.txt'):
-        self.slope = slope
+    def __init__(self, alpha=1e-4, beta=0.75, k=2, n=5):
         self.alpha = alpha
         self.beta = beta
         self.k = k
         self.n = n
-        self.fp = fp
 
     def make_node(self, x, gz):
         x = tensor.as_tensor_variable(x)
@@ -84,7 +80,6 @@ class LRN(basic_ops.MKLOp):
         self.size = n
         self.k = k
         self.uniq_id = uniq_id
-        self.fp = 'p_lrn' + str(uniq_id)
 
     def make_node(self, x):
         x = tensor.as_tensor_variable(x)
@@ -96,7 +91,7 @@ class LRN(basic_ops.MKLOp):
         x, = inp
         gz, = grads
         return [LRNGrad(uniq_id=self.uniq_id, alpha=self.alpha,
-                        beta=self.beta, k=self.k, n=self.size, fp=self.fp)(x, gz)]
+                        beta=self.beta, k=self.k, n=self.size)(x, gz)]
 
     def c_support_code(self):
         return mkl_helper.header_text() + """
@@ -137,13 +132,13 @@ class LRN(basic_ops.MKLOp):
         assert dtype in ('float32', 'float64')
 
         if dtype == 'float32':
-            precision = 'F32'
+            sub['precision'] = 'F32'
         else:
-            precision = 'F64'
+            sub['precision'] = 'F64'
 
         ccode = """
-            dnnReleaseBuffer_%s(buffer)
-        """ % precision
+            dnnReleaseBuffer_%s(buffer);
+        """ % sub
         return ccode
 
     def c_headers(self):
@@ -162,7 +157,6 @@ class LRN(basic_ops.MKLOp):
         beta = self.beta
         size = self.size
         k = self.k
-        fp = self.fp
 
         dtype = str(node.__dict__['inputs'][0].dtype)
         assert dtype in ('float32', 'float64')
@@ -301,13 +295,12 @@ class LRNGrad(basic_ops.MKLOp):
     """
     __props__ = ('alpha', 'beta', 'k', 'size')
 
-    def __init__(self, alpha=1e-4, beta=0.75, k=2, n=5, fp='default.txt', uniq_id=0):
+    def __init__(self, alpha=1e-4, beta=0.75, k=2, n=5, uniq_id=0):
         self.alpha = alpha
         self.beta = beta
         self.k = k
         self.size = n
         self.uniq_id = uniq_id
-        self.fp = fp
 
     def c_headers(self):
         return ['<math.h>', '<fstream>']
@@ -323,14 +316,14 @@ class LRNGrad(basic_ops.MKLOp):
         assert dtype in ('float32', 'float64')
 
         if dtype == 'float32':
-            precision = 'F32'
+            sub['precision'] = 'F32'
         else:
-            precision = 'F64'
+            sub['precision'] = 'F64'
 
         ccode = """
-            std::out<<"releasing buffer\\n";
+            std::cout<<"releasing buffer\\n";
             dnnReleaseBuffer_%s(buffer);
-        """ % precision
+        """ % sub
         return ccode
 
     def c_support_code(self):
@@ -380,7 +373,6 @@ class LRNGrad(basic_ops.MKLOp):
         beta = self.beta
         size = self.size
         k = self.k
-        fp = self.fp
 
         dtype = str(node.__dict__['inputs'][0].dtype)
         assert dtype in ('float32', 'float64')

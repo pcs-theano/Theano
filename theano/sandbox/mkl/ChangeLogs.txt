@@ -1,9 +1,18 @@
 Date: 2016/12/26
+Author: Ciyong
+Changes:
+----------------------------------
+1. Remove useless var in lrn Op.
+2. Add democase for alexnet.
+
+
+Date: 2016/12/26
 Author: Patric 
 Changes:
 ----------------------------------
 1. Fix code style issues.
 2. Add comments
+
 
 Date: 2016/12/25
 Author: lvtao
