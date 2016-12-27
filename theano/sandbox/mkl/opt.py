@@ -54,10 +54,10 @@ class CutMKLDataConversionChain(Optimizer):
         fgraph.attach_feature(toolbox.ReplaceValidate())
 
     def apply(self, fgraph):
-        list_forward = ['Relu', 'Pool', 'Conv2D', 'LRN', 'ElemwiseSum']
+        list_forward = ['Relu', 'Pool', 'Conv2D', 'LRN', 'ElemwiseSum', 'BatchNormalization']
         list_i2u = ['I2U']
-        list_u2i = ['U2IPool', 'U2IRelu', 'U2IConv', 'U2IElemwiseSum', 'U2ILRN']
-        list_backward = ['ReluGrad', 'PoolGrad', 'ConvGradInputs', 'ConvGradWeights', 'LRNGrad', 'ElemwiseSum']
+        list_u2i = ['U2IPool', 'U2IRelu', 'U2IConv', 'U2IElemwiseSum', 'U2ILRN', 'U2IBatchNormalization']
+        list_backward = ['ReluGrad', 'PoolGrad', 'ConvGradInputs', 'ConvGradWeights', 'LRNGrad', 'ElemwiseSum', 'BatchNormalizationGrad']
         list_i2u_back = ['I2UGrad', 'U2IElemwiseSum']
         list_u2i_back = ['U2IGrad', 'I2U']
         for node in fgraph.toposort():
@@ -665,6 +665,7 @@ def local_Conv2D_mkl(node):
         x_internal = U2IConv(imshp=node.op.imshp,
                              kshp=node.op.kshp,
                              subsample=node.op.subsample,
+                             border_mode=node.op.border_mode,
                              filter_dilation=node.op.filter_dilation,
                              uniq_id=uniq_id)(x)
         convOut = mkl_conv.Conv2D(imshp=node.op.imshp,
@@ -707,6 +708,7 @@ def local_ConvGradInputs_mkl(node):
         x_internal = U2IConv(imshp=node.op.imshp,
                              kshp=node.op.kshp,
                              subsample=node.op.subsample,
+                             border_mode=node.op.border_mode,
                              filter_dilation=node.op.filter_dilation,
                              uniq_id=uniq_id)(x)
         convOut = mkl_conv.Conv2D(imshp=node.op.imshp,
@@ -754,6 +756,7 @@ def local_ConvGradWeights_mkl(node):
         x_internal = U2IConv(imshp=node.op.imshp,
                              kshp=node.op.kshp,
                              subsample=node.op.subsample,
+                             border_mode=node.op.border_mode,
                              filter_dilation=node.op.filter_dilation,
                              uniq_id=uniq_id)(x)
         convOut = mkl_conv.Conv2D(imshp=node.op.imshp,
