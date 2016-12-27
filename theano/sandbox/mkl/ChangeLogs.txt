@@ -1,3 +1,11 @@
+Date: 2016/12/27
+Author: lvtao
+Changes:
+----------------------------------
+1. Update mkl/opt.py to support U2IBatchNormalization cutting.
+2. Fix 'border_mode' parameter bug of U2IConv function in Conv local opts.
+
+
 Date: 2016/12/26
 Author: Ciyong
 Changes:
