@@ -667,6 +667,12 @@ def local_Conv2D_mkl(node):
     if node.inputs[1].type.ndim != 4 and node.inputs[1].type.ndim != 5:
         return
 
+    if None in node.op.kshp:
+        return
+
+    if None in node.op.imshp:
+        return
+
     try:
         image, weight = node.inputs
         image_internal = U2IConv(imshp=node.op.imshp,
@@ -707,6 +713,12 @@ def local_ConvGradInputs_mkl(node):
         return
 
     if node.op.filter_dilation != (1, 1):
+        return
+
+    if None in node.op.kshp:
+        return
+
+    if None in node.op.imshp:
         return
 
     try:
@@ -755,6 +767,12 @@ def local_ConvGradWeights_mkl(node):
         return
 
     if node.op.filter_dilation != (1, 1):
+        return
+
+    if None in node.op.kshp:
+        return
+
+    if None in node.op.imshp:
         return
 
     try:

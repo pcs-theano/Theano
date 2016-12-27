@@ -1,4 +1,12 @@
 Date: 2016/12/27
+Author: Patric
+Changes:
+----------------------------------
+1. Conv return if shape is None.
+2. Add testcase.
+
+
+Date: 2016/12/27
 Author: lvtao
 Changes:
 ----------------------------------
