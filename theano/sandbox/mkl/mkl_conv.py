@@ -1225,3 +1225,119 @@ class ConvGradWeights(MKLConvBase):
             first_run = 0;
         """ % sub
         return ccode
+
+
+class AbstractConvGroup(gof.Op):
+    __props__ = ('imshp', 'kshp', 'subsample', 'border_mode', 'filter_flip', 'group')
+
+    def __init__(self, imshp=None, kshp=None, subsample=(1, 1), border_mode='valid', filter_flip=False, group=1):
+        super(AbstractConvGroup, self).__init__()
+        if isinstance(imshp, list):
+            imshp = tuple(imshp)
+        if isinstance(kshp, list):
+            kshp = tuple(kshp)
+        if isinstance(subsample, list):
+            subsample = tuple(subsample)
+        if isinstance(border_mode, list):
+            border_mode = tuple(border_mode)
+        self.imshp = imshp
+        self.kshp = kshp
+        self.subsample = subsample
+        self.border_mode = border_mode
+        self.filter_flip = filter_flip
+        self.group = group
+        assert self.group in [1, 2]
+
+    def make_node(self, image, weight, bias=None):
+        image = as_tensor_variable(image)
+        weight = as_tensor_variable(weight)
+
+        if image.type.ndim != 4:
+            raise TypeError('Input image should be a 4-dim tensor.')
+
+        if self.group is 1:
+            assert weight.type.ndim == 4
+        else:
+            assert weight.type.ndim == 5
+
+        broadcastable = [image.type.broadcastable[0], weight.type.broadcastable[0], False, False]
+        dtype = image.type.dtype
+
+        if bias is not None:
+            bias = as_tensor_variable(bias)
+            inputs = [image, weight, bias]
+        else:
+            inputs = [image, weight]
+        return gof.Apply(self, inputs, [TensorType(dtype, broadcastable)()])
+
+    def grad(self, inp, grads):
+        assert len(inp) in [2, 3]
+
+        if len(inp) is 3:
+            image, weight, bias, = inp
+        else:
+            image, weight, = inp
+            bias = None
+
+        gz, = grads
+        grad_out = AbstractConvGroupGrad(imshp=self.imshp,
+                                         kshp=self.kshp,
+                                         subsample=self.subsample,
+                                         border_mode=self.border_mode,
+                                         filter_flip=self.filter_flip,
+                                         group=self.group)(image, gz, weight, bias)
+        if len(grad_out) > 2:
+            grad_image, grad_weight, grad_bias, = grad_out
+            return grad_image, grad_weight, grad_bias
+        else:
+            grad_image, grad_weight, = grad_out
+            return grad_image, grad_weight
+
+    def perform(self, node, inp, out):
+        if len(inp) == 2:
+            image, weight = inp
+        else:
+            image, weight, bias = inp
+        z, = out
+
+
+class AbstractConvGroupGrad(gof.Op):
+    __props__ = ('imshp', 'kshp', 'subsample', 'border_mode', 'filter_flip', 'group')
+
+    def __init__(self, imshp=None, kshp=None, subsample=(1, 1), border_mode='valid', filter_flip=False, group=1):
+        super(AbstractConvGroupGrad, self).__init__()
+        self.imshp = imshp
+        self.kshp = kshp
+        self.subsample = subsample
+        self.border_mode = border_mode
+        self.filter_flip = filter_flip
+        self.group = group
+
+    def make_node(self, image, gz, weight, bias=None):
+        if image.type.ndim != 4:
+            raise TypeError('Input image should be a 4-dim tensor.')
+
+        if self.group is 1:
+            assert weight.type.ndim == 4
+        else:
+            assert weight.type.ndim == 5
+
+        broadcastable = [gz.type.broadcastable[0], weight.type.broadcastable[1], False, False]
+        dtype = weight.type.dtype
+
+        if bias is not None:
+            inputs = [image, gz, weight, bias]
+            outputs = [TensorType(dtype, broadcastable)(), weight.type(), bias.type()]
+        else:
+            inputs = [image, gz, weight]
+            outputs = [TensorType(dtype, broadcastable)(), weight.type()]
+
+        return gof.Apply(self, inputs, outputs)
+
+    def perform(self, node, inp, out):
+        if len(inp) == 3:
+            image, gz, weight, = inp
+            grad_image, grad_weight, = out
+        else:
+            image, gz, weight, bias, = inp
+            grad_image, grad_weight, grad_bias, = out
