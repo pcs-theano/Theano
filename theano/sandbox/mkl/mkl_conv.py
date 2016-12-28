@@ -870,13 +870,17 @@ class ConvGradWeights(MKLConvBase):
         if gradz.type.ndim != 4:
             raise TypeError('gradz must be 4D tensor')
 
+        weightbt = [gradz.type.broadcastable[1], image.type.broadcastable[1], False, False]
+        dtype = image.type.dtype
         if bias is not None:
             bias = as_tensor_variable(bias)
             inputs = [image, weight, gradz, bias]
             outputs = [weight.type(), bias.type()]
+            biasbt = [gradz.type.broadcastable[1]]
+            outputs = [TensorType(dtype, weightbt)(), TensorType(dtype, biasbt)()]
         else:
             inputs = [image, weight, gradz]
-            outputs = [weight.type()]
+            outputs = [TensorType(dtype, weightbt)()]
 
         return Apply(self, inputs, outputs)
 

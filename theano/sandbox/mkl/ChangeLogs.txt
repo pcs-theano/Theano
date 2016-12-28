@@ -1,3 +1,10 @@
+Date: 2016/12/28
+Author: Patric
+Changes:
+----------------------------------
+1. ConvGradWeight return tpye 
+
+
 Date: 2016/12/27
 Author: Patric
 Changes:
