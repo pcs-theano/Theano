@@ -2223,8 +2223,12 @@ def relu(x, alpha=0):
     # the graph.
     # Otherwise, Use the default relu function as it was.
 
+    if theano.sandbox.mkl.mkl_available.avail is None:
+        theano.sandbox.mkl.mkl_available()
+
     if theano.sandbox.mkl.mkl_available.avail and \
        isinstance(x, theano.Variable) and x.type.ndim == 4:
+        from theano.sandbox.mkl.mkl_relu import AbstractRelu
         return AbstractRelu(slope=alpha)(x)
 
     # This is probably the fastest implementation for GPUs. Both the forward
