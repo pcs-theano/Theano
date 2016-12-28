@@ -163,7 +163,7 @@ def test_mkl_relu_forward():
         x = tensor.ftensor4('x')
     else:
         x = tensor.dtensor4('x')
-    y = tensor.nnet.AbstractRelu(slope=1)(x)
+    y = mkl.mkl_relu.AbstractRelu(slope=1)(x)
 
     yy = tensor.nnet.relu(x)
 
@@ -237,7 +237,7 @@ def test_mkl_pool_relu():
     :return:
     """
     x = tensor.ftensor4('x')
-    y = tensor.nnet.AbstractRelu(slope=1)(x)
+    y = mkl.mkl_relu.AbstractRelu(slope=1)(x)
     maxpoolshps = ((1, 1), (2, 2), (3, 3), (2, 3))
     # imval = numpy.random.rand(4, 2, 16, 16).astype(theano.config.floatX)
     ignore_border = True

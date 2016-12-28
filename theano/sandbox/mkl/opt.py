@@ -19,12 +19,10 @@ from theano.sandbox.mkl.basic_ops import (U2IGrad,
                                           U2IElemwiseSum,
                                           U2IBatchNormalization,
                                           )
-from theano.sandbox.mkl import mkl_relu
-from theano.sandbox.mkl import mkl_pool
-from theano.sandbox.mkl import mkl_lrn, mkl_conv, mkl_elemwise, mkl_bn
+from theano.sandbox.mkl import (mkl_relu, mkl_pool, mkl_lrn,
+                                mkl_conv, mkl_elemwise, mkl_bn)
 
 from theano.tensor.signal import pool
-from theano.tensor.nnet.nnet import (AbstractRelu, AbstractReluGrad)
 
 from theano.tensor.nnet.abstract_conv import (AbstractConv2d,
                                               AbstractConv2d_gradWeights,
@@ -505,7 +503,7 @@ def local_poolGrad_mkl(node):
 
 
 @register_opt()
-@local_optimizer([AbstractRelu])
+@local_optimizer([mkl_relu.AbstractRelu])
 def local_relu_mkl(node):
     global uniq_id
     uniq_id += 1
@@ -513,7 +511,7 @@ def local_relu_mkl(node):
     if not mkl_available():
         return
 
-    if not isinstance(node.op, AbstractRelu):
+    if not isinstance(node.op, mkl_relu.AbstractRelu):
         return
 
     if node.inputs[0].type.ndim != 4:
@@ -536,7 +534,7 @@ def local_relu_mkl(node):
 
 
 @register_opt()
-@local_optimizer([AbstractReluGrad])
+@local_optimizer([mkl_relu.AbstractReluGrad])
 def local_reluGrad_mkl(node):
     global uniq_id
     uniq_id += 1
@@ -544,7 +542,7 @@ def local_reluGrad_mkl(node):
     if not mkl_available():
         return
 
-    if not isinstance(node.op, AbstractReluGrad):
+    if not isinstance(node.op, mkl_relu.AbstractReluGrad):
         return
 
     if node.inputs[0].type.ndim != 4:

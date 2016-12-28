@@ -1,7 +1,54 @@
-from theano import Variable, Apply
+from theano import gof, Variable, Apply, tensor
 from theano.tensor import as_tensor_variable
 from theano.tensor.blas import ldflags
 from theano.sandbox.mkl import mkl_helper, basic_ops
+
+
+class AbstractRelu(gof.Op):
+    __props__ = ('slope',)
+
+    def __init__(self, slope=1):
+        self.slope = slope
+
+    def make_node(self, x):
+        x = tensor.as_tensor_variable(x)
+        if x.type.ndim != 4:
+            raise TypeError('Expect a 4D tensor, but actually got %dD tensor' %
+                            x.type.ndim)
+        x = tensor.as_tensor_variable(x)
+        return gof.Apply(self, [x], [x.type()])
+
+    def grad(self, inp, grads):
+        x, = inp
+        gz, = grads
+        return [AbstractReluGrad(slope=self.slope)(x, gz)]
+
+    def perform(self, node, inp, out_):
+        x, = inp
+        z, = out_
+
+        z[0] = x
+
+
+class AbstractReluGrad(gof.Op):
+    __props__ = ('slope',)
+
+    def __init__(self, slope=1):
+        self.slope = slope
+
+    def make_node(self, x, gz):
+        x = tensor.as_tensor_variable(x)
+        if x.type.ndim != 4:
+            raise TypeError('Expect a 4D tensor, but actually got %dD tensor' %
+                            x.type.ndim)
+        x = tensor.as_tensor_variable(x)
+        return gof.Apply(self, [x, gz], [x.type()])
+
+    def perform(self, node, inp, out_):
+        x, gz = inp
+        gx, = out_
+
+        gx[0] = gz
 
 
 class Relu(basic_ops.MKLOp):

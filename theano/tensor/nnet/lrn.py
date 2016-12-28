@@ -3,8 +3,6 @@ from __future__ import absolute_import, print_function, division
 import theano
 from theano.sandbox.mkl.mkl_lrn import AbstractLRN
 
-# Move AbstractLRN and AbstractLRNGrad to theano/sandbox/mkl/mkl_lrn.py
-
 
 def lrn(x, alpha=1e-4, beta=0.75, k=2, n=5):
     if theano.sandbox.mkl.mkl_available.avail is None:

@@ -66,9 +66,7 @@ echo "" 2>&1 | tee -a $LOG_FILE
 
 # Pooling
 echo "run test_pool.py..." 2>&1 | tee -a $LOG_FILE
-nosetests -s test_pool.py:TestDownsampleFactorMax.test_DownsampleFactorMax 2>&1 | tee -a $LOG_FILE
-nosetests -s test_pool.py:TestDownsampleFactorMax.test_DownsampleFactorMaxStride 2>&1 | tee -a $LOG_FILE
-nosetests -s test_pool.py:TestDownsampleFactorMax.test_DownsampleFactorMax_grad 2>&1 | tee -a $LOG_FILE
+nosetests -s test_pool.py 2>&1 | tee -a $LOG_FILE
 echo "" 2>&1 | tee -a $LOG_FILE
 
 # Relu
