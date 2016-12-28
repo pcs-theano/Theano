@@ -225,8 +225,11 @@ class Conv2D(MKLConvBase):
         if weight.type.ndim not in [4, 5]:
             raise TypeError('weight must be 4D or 5D tensor')
 
-        broadcastable = [image.type.broadcastable[0], weight.type.broadcastable[0],
-                         False, False]
+        if weight.type.ndim == 4:
+            broadcastable = [image.type.broadcastable[0], weight.type.broadcastable[0], False, False]
+        else:
+            broadcastable = [image.type.broadcastable[0], weight.type.broadcastable[1], False, False]
+
         dtype = image.type.dtype
 
         if bias is not None:
@@ -628,8 +631,11 @@ class ConvGradInputs(MKLConvBase):
         if gradz.type.ndim != 4:
             raise TypeError('gradz must be 4D tensor')
 
-        broadcastable = [gradz.type.broadcastable[0], weight.type.broadcastable[1],
-                         False, False]
+        if weight.type.ndim == 4:
+            broadcastable = [gradz.type.broadcastable[0], weight.type.broadcastable[1], False, False]
+        else:
+            broadcastable = [gradz.type.broadcastable[0], weight.type.broadcastable[2], False, False]
+
         dtype = weight.type.dtype
         return Apply(self, [image, weight, gradz], [TensorType(dtype, broadcastable)()])
 
@@ -871,12 +877,15 @@ class ConvGradWeights(MKLConvBase):
         if gradz.type.ndim != 4:
             raise TypeError('gradz must be 4D tensor')
 
-        weightbt = [gradz.type.broadcastable[1], image.type.broadcastable[1], False, False]
+        if weight.type.ndim == 4:
+            weightbt = [gradz.type.broadcastable[1], image.type.broadcastable[1], False, False]
+        else:
+            weightbt = [False, gradz.type.broadcastable[1], image.type.broadcastable[1], False, False]
+
         dtype = image.type.dtype
         if bias is not None:
             bias = as_tensor_variable(bias)
             inputs = [image, weight, gradz, bias]
-            outputs = [weight.type(), bias.type()]
             biasbt = [gradz.type.broadcastable[1]]
             outputs = [TensorType(dtype, weightbt)(), TensorType(dtype, biasbt)()]
         else:
@@ -1273,7 +1282,8 @@ class AbstractConvGroup(gof.Op):
         self.filter_flip = filter_flip
         self.filter_dilation = filter_dilation
         self.group = group
-        assert self.group in [1, 2]
+        if not (isinstance(group, integer_types) and group > 0):
+            raise ValueError('invalid group {}, which mush be a positive integer.'.format(group))
 
     def make_node(self, image, weight, bias=None):
         image = as_tensor_variable(image)
@@ -1284,10 +1294,11 @@ class AbstractConvGroup(gof.Op):
 
         if self.group is 1:
             assert weight.type.ndim == 4
+            broadcastable = [image.type.broadcastable[0], weight.type.broadcastable[0], False, False]
         else:
             assert weight.type.ndim == 5
+            broadcastable = [image.type.broadcastable[0], weight.type.broadcastable[1], False, False]
 
-        broadcastable = [image.type.broadcastable[0], weight.type.broadcastable[0], False, False]
         dtype = image.type.dtype
 
         if bias is not None:
@@ -1352,18 +1363,24 @@ class AbstractConvGroupGrad(gof.Op):
 
         if self.group is 1:
             assert weight.type.ndim == 4
+            w_broadcastable = [gz.type.broadcastable[1], image.type.broadcastable[1], False, False]
+            i_broadcastable = [gz.type.broadcastable[0], weight.type.broadcastable[1], False, False]
         else:
             assert weight.type.ndim == 5
+            w_broadcastable = [False, gz.type.broadcastable[1], image.type.broadcastable[1], False, False]
+            i_broadcastable = [gz.type.broadcastable[0], weight.type.broadcastable[2], False, False]
 
-        broadcastable = [gz.type.broadcastable[0], weight.type.broadcastable[1], False, False]
         dtype = weight.type.dtype
 
         if bias is not None:
+            bias = as_tensor_variable(bias)
             inputs = [image, gz, weight, bias]
-            outputs = [TensorType(dtype, broadcastable)(), weight.type(), bias.type()]
+            b_broadcastable = [gz.type.broadcastable[1]]
+            outputs = [TensorType(dtype, i_broadcastable)(), TensorType(dtype, w_broadcastable)(),
+                       TensorType(dtype, b_broadcastable)()]
         else:
             inputs = [image, gz, weight]
-            outputs = [TensorType(dtype, broadcastable)(), weight.type()]
+            outputs = [TensorType(dtype, i_broadcastable)(), TensorType(dtype, w_broadcastable)()]
 
         return gof.Apply(self, inputs, outputs)
 
