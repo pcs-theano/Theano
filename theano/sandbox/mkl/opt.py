@@ -903,12 +903,14 @@ def local_ConvGroup_mkl(node):
                                  kshp=node.op.kshp,
                                  subsample=node.op.subsample,
                                  border_mode=node.op.border_mode,
+                                 filter_dilation=node.op.filter_dilation,
                                  uniq_id=uniq_id)(image)
         conv_out = mkl_conv.Conv2D(imshp=node.op.imshp,
                                    kshp=node.op.kshp,
                                    subsample=node.op.subsample,
                                    border_mode=node.op.border_mode,
                                    filter_flip=node.op.filter_flip,
+                                   filter_dilation=node.op.filter_dilation,
                                    uniq_id=uniq_id)(image_internal, weight, bias)
         conv_out = I2U(uniq_id=uniq_id)(conv_out)
         rval = conv_out
@@ -922,7 +924,7 @@ def local_ConvGroup_mkl(node):
 
 @register_opt()
 @local_optimizer([mkl_conv.AbstractConvGroupGrad])
-def local_ConvGroupGradInput_mkl(node):
+def local_ConvGroupGrad_mkl(node):
     global uniq_id
     uniq_id += 1
 
@@ -951,12 +953,14 @@ def local_ConvGroupGradInput_mkl(node):
                                  kshp=node.op.kshp,
                                  subsample=node.op.subsample,
                                  border_mode=node.op.border_mode,
+                                 filter_dilation=node.op.filter_dilation,
                                  uniq_id=uniq_id)(image)
         conv_out = mkl_conv.Conv2D(imshp=node.op.imshp,
                                    kshp=node.op.kshp,
                                    subsample=node.op.subsample,
                                    border_mode=node.op.border_mode,
                                    filter_flip=node.op.filter_flip,
+                                   filter_dilation=node.op.filter_dilation,
                                    uniq_id=uniq_id)(image_internal, weight, bias)
         gz_internal = I2UGrad(uniq_id=uniq_id)(conv_out, gz)
         grad_image = mkl_conv.ConvGradInputs(imshp=node.op.imshp,
@@ -964,6 +968,7 @@ def local_ConvGroupGradInput_mkl(node):
                                              subsample=node.op.subsample,
                                              border_mode=node.op.border_mode,
                                              filter_flip=node.op.filter_flip,
+                                             filter_dilation=node.op.filter_dilation,
                                              uniq_id=uniq_id)(image_internal, weight, gz_internal)
         grad_image = U2IGrad(uniq_id=uniq_id)(image, grad_image)
 
@@ -972,6 +977,7 @@ def local_ConvGroupGradInput_mkl(node):
                                             subsample=node.op.subsample,
                                             border_mode=node.op.border_mode,
                                             filter_flip=node.op.filter_flip,
+                                            filter_dilation=node.op.filter_dilation,
                                             uniq_id=uniq_id)(image_internal, weight, gz_internal, bias)
         if isinstance(grad_out, (list, tuple)):
             grad_weight, grad_bias, = grad_out

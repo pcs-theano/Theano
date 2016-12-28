@@ -4,6 +4,7 @@ library, which is a free dnn library provided by Intel.
 """
 from __future__ import absolute_import, print_function, division
 import theano
+from six import integer_types
 from theano import Apply
 from theano import gof
 from theano.tensor import as_tensor_variable, TensorType
@@ -1228,23 +1229,45 @@ class ConvGradWeights(MKLConvBase):
 
 
 class AbstractConvGroup(gof.Op):
-    __props__ = ('imshp', 'kshp', 'subsample', 'border_mode', 'filter_flip', 'group')
+    __props__ = ('imshp', 'kshp', 'subsample', 'border_mode', 'filter_flip', 'filter_dilation', 'group')
 
-    def __init__(self, imshp=None, kshp=None, subsample=(1, 1), border_mode='valid', filter_flip=False, group=1):
+    def __init__(self,
+                 imshp=None, kshp=None, subsample=(1, 1),
+                 border_mode='valid', filter_flip=False,
+                 filter_dilation=(1, 1), group=1):
+
         super(AbstractConvGroup, self).__init__()
-        if isinstance(imshp, list):
-            imshp = tuple(imshp)
-        if isinstance(kshp, list):
-            kshp = tuple(kshp)
-        if isinstance(subsample, list):
-            subsample = tuple(subsample)
-        if isinstance(border_mode, list):
-            border_mode = tuple(border_mode)
+        imshp = tuple(imshp) if imshp else (None, ) * 4
+        kshp = tuple(kshp) if kshp else (None, ) * 4
+
+        if len(subsample) != 2:
+            raise ValueError('subsample must have two elements')
+        subsample = tuple(subsample)
+
+        if len(filter_dilation) != 2:
+            raise ValueError('filter_dilation must have two elements')
+        filter_dilation = tuple(filter_dilation)
+
+        if isinstance(border_mode, integer_types):
+            border_mode = (border_mode, border_mode)
+        if isinstance(border_mode, tuple):
+            pad_h, pad_w = map(int, border_mode)
+            border_mode = (pad_h, pad_w)
+        if border_mode == (0, 0):
+            border_mode = 'valid'
+        if not ((isinstance(border_mode, tuple) and min(border_mode) >= 0) or
+                border_mode in ('valid', 'full', 'half')):
+            raise ValueError(
+                'invalid border_mode {}, which must be either '
+                '"valid", "full", "half", an integer or a pair of'
+                ' integers'.format(border_mode))
+
         self.imshp = imshp
         self.kshp = kshp
         self.subsample = subsample
         self.border_mode = border_mode
         self.filter_flip = filter_flip
+        self.filter_dilation = filter_dilation
         self.group = group
         assert self.group in [1, 2]
 
@@ -1285,6 +1308,7 @@ class AbstractConvGroup(gof.Op):
                                          subsample=self.subsample,
                                          border_mode=self.border_mode,
                                          filter_flip=self.filter_flip,
+                                         filter_dilation=self.filter_dilation,
                                          group=self.group)(image, gz, weight, bias)
         if len(grad_out) > 2:
             grad_image, grad_weight, grad_bias, = grad_out
@@ -1302,15 +1326,20 @@ class AbstractConvGroup(gof.Op):
 
 
 class AbstractConvGroupGrad(gof.Op):
-    __props__ = ('imshp', 'kshp', 'subsample', 'border_mode', 'filter_flip', 'group')
+    __props__ = ('imshp', 'kshp', 'subsample', 'border_mode', 'filter_flip', 'filter_dilation', 'group')
 
-    def __init__(self, imshp=None, kshp=None, subsample=(1, 1), border_mode='valid', filter_flip=False, group=1):
+    def __init__(self,
+                 imshp=None, kshp=None, subsample=(1, 1),
+                 border_mode='valid', filter_flip=False,
+                 filter_dilation=(1, 1), group=1):
+
         super(AbstractConvGroupGrad, self).__init__()
         self.imshp = imshp
         self.kshp = kshp
         self.subsample = subsample
         self.border_mode = border_mode
         self.filter_flip = filter_flip
+        self.filter_dilation = filter_dilation
         self.group = group
 
     def make_node(self, image, gz, weight, bias=None):
