@@ -118,9 +118,9 @@ class NormAcrossMap(Op):
             #if __DEBUG__
             std::cout<<"lrn fwd start\\n";
             #endif
-            if(first_run){
-                ((void **)PyArray_DATA(%(x)s))[2] = (void *)bp;
+            ((void **)PyArray_DATA(%(x)s))[2] = (void *)bp;
 
+            if(first_run){
                 typenum = PyArray_ObjectType((PyObject*)%(x)s, 0);
                 x_bs = PyArray_DIMS(%(x)s)[0];
                 x_channels = PyArray_DIMS(%(x)s)[1];
@@ -320,9 +320,9 @@ class NormAcrossMapGrad(Op):
             #if __DEBUG__
             std::cout<<"lrn bwd start\\n";
             #endif
-            if(first_run){
-                ip = ((void**)PyArray_DATA(%(x)s))[2];
+            ip = ((void**)PyArray_DATA(%(x)s))[2];
 
+            if(first_run){
                 //std::cout<<"LRN Bwd init "<<std::endl;
                 typenum = PyArray_ObjectType((PyObject*)%(x)s, 0);
                 x_bs = PyArray_DIMS(%(x)s)[0];
