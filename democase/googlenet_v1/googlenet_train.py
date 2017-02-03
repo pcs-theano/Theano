@@ -9,7 +9,8 @@ from googlenet_theano import googlenet, compile_models, set_learning_rate
 from params import get_params, load_net_state, load_params, save_net_state
 from read_lmdb import read_lmdb
 
-def googlenet_train(batch_size=32, image_size=(3, 224, 224), n_epochs=60, mkldnn=False):
+
+def googlenet_train(batch_size=32, image_size=(3, 224, 224), n_epochs=60, resume_epoch=-1, mkldnn=False):
 
     train_lmdb_path = '/path/to/your/imagenet/ilsvrc2012/ilsvrc12_train_lmdb'
     val_lmdb_path = '/path/to/your/imagenet/ilsvrc2012/ilsvrc12_val_lmdb'
@@ -21,29 +22,19 @@ def googlenet_train(batch_size=32, image_size=(3, 224, 224), n_epochs=60, mkldnn
     train_lmdb_iterator = read_lmdb(batch_size, train_lmdb_path)
     train_data_size = train_lmdb_iterator.total_number
     n_train_batches = train_data_size / batch_size
-    print('n_train_batches = '+ str(n_train_batches))
+    print('n_train_batches = ' + str(n_train_batches))
 
     val_lmdb_iterator = read_lmdb(batch_size, val_lmdb_path)
     val_data_size = val_lmdb_iterator.total_number
     n_val_batches = val_data_size / batch_size
-    print('n_val_batches = '+ str(n_val_batches))
-    
+    print('n_val_batches = ' + str(n_val_batches))
+
     ## COMPILE FUNCTIONS ##
     (train_model, validate_model, train_error,
-        shared_x, shared_y, shared_lr, vels) = compile_models(model, batch_size = batch_size)
+        shared_x, shared_y, shared_lr, vels) = compile_models(model, batch_size=batch_size)
 
-    ####load net state
-    start_epoch = 0
-    net_params = load_net_state(start_epoch)
-    if net_params:
-        load_params(model.params, net_params['model_params'])
-        load_params(vels, net_params['vels'])
-        epoch = net_params['epoch']
-        minibatch_index = net_params['minibatch_index']
-        train_lmdb_iterator.set_cursor(net_params['minibatch_index'])
-    else:
-        epoch = 0
-        minibatch_index = 0
+    epoch = 0
+    minibatch_index = 0
 
     print('... training')
     # stroe history cost, and print the average cost in a frequency of 40 iterations
@@ -68,11 +59,21 @@ def googlenet_train(batch_size=32, image_size=(3, 224, 224), n_epochs=60, mkldnn
             cost_ij = train_model()
             error_ij = train_error()
 
+            # resume the training.
+            if resume_epoch != -1:
+                net_params = load_net_state(resume_epoch)
+                load_params(model.params, net_params['model_params'])
+                load_params(vels, net_params['vels'])
+                epoch = net_params['epoch']
+
+                resume_epoch = -1
+                continue
+
             cost_array.append(cost_ij)
             if idx % 40 == 0:
                 average_cost = np.array(cost_array).mean()
                 cost_array = []
-                print('iter %d, cost %f, error_ij %f' % (idx, average_cost, error_ij)) #FIXME, mean loss for googlenet
+                print('iter %d, cost %f, error_ij %f' % (idx, average_cost, error_ij))
             minibatch_index += 1
             if minibatch_index == n_train_batches:
                 minibatch_index = 0
@@ -98,11 +99,10 @@ def googlenet_train(batch_size=32, image_size=(3, 224, 224), n_epochs=60, mkldnn
         ###save params every epoch
         net_params['model_params'] = get_params(model.params)
         net_params['vels'] = get_params(vels)
-        net_params['minibatch_index'] = minibatch_index
         net_params['epoch'] = epoch
         save_net_state(net_params, epoch)
 
         epoch = epoch + 1
 
-if __name__ =='__main__':
-    googlenet_train(batch_size=32,mkldnn=True)
+if __name__ == '__main__':
+    googlenet_train(batch_size=32, resume_epoch=-1, mkldnn=True)
