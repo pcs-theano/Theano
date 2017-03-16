@@ -1,12 +1,15 @@
 from __future__ import absolute_import, print_function, division
+import os
+import sys
 import logging
 import textwrap
-
+import stat
 import theano
 from theano import config, gof
 from six import integer_types
-from theano.gof.cmodule import Compiler
+from theano.gof.cmodule import Compiler, get_lib_extension, GCC_compiler
 from theano.sandbox.mkl.mkl_helper import header_text
+from theano.gof.compilelock import get_lock, release_lock
 
 from theano.gof import EquilibriumDB, SequenceDB
 
@@ -31,6 +34,74 @@ def register_opt(*tags, **kwargs):
                                'mkl', *tags, **kwargs)
         return local_opt
     return f
+
+
+mkl_path = os.path.abspath(os.path.split(__file__)[0])
+mkl_ndarray_loc = os.path.join(config.compiledir, 'mkl_ndarray')
+mkl_ndarray_so = os.path.join(mkl_ndarray_loc, 'mkl_ndarray.' + get_lib_extension())
+libmkl_ndarray_so = os.path.join(mkl_ndarray_loc, 'libmkl_ndarray.' + get_lib_extension())
+
+def try_import_mkl_ndarray():
+    mkl_files = ('mkl_ndarray.c', 'mkl_ndarray.h')
+
+    stat_times = [os.stat(os.path.join(mkl_path, mkl_file))[stat.ST_MTIME] for mkl_file in mkl_files]
+    data = max(stat_times)
+    if os.path.exists(mkl_ndarray_so):
+        if data >= os.stat(mkl_ndarray_so)[stat.ST_MTIME]:
+            return False
+
+    try:
+        sys.path[0:0] = [config.compiledir]
+        import mkl_ndarray.mkl_ndarray
+        del sys.path[0]
+    except ImportError:
+        return False
+    return True
+
+
+compile_mkl_ndarray = not try_import_mkl_ndarray()
+
+if compile_mkl_ndarray:
+    get_lock()
+    try:
+        if not try_import_mkl_ndarray():
+            try:
+                code = open(os.path.join(mkl_path, 'mkl_ndarray.c')).read()
+                if not os.path.exists(mkl_ndarray_loc):
+                    os.makedirs(mkl_ndarray_loc)
+                compiler = GCC_compiler()
+                preargs = compiler.compile_args()
+                compiler.compile_str('mkl_ndarray',
+                                     code,
+                                     location=mkl_ndarray_loc,
+                                     include_dirs=[mkl_path],
+                                     libs=['mklml_intel' if 'mklml_intel' in config.blas.ldflags else 'mkl_rt'],
+                                     preargs=preargs,)
+
+                from mkl_ndarray.mkl_ndarray import *
+            except Exception as e:
+                _logger.error('Failed to compile mkl_ndarray.c: %s', str(e))
+    finally:
+        release_lock()
+
+
+def ok():
+    try:
+        open(libmkl_ndarray_so).close()
+        return True
+    except IOError:
+        return False
+
+
+if not ok():
+    if sys.platform == "win32":
+        shutil.copyfile(mkl_ndarray_so, libmkl_ndarray_so)
+    else:
+        try:
+            os.symlink(mkl_ndarray_so, libmkl_ndarray_so)
+        except OSError as e:
+            if getattr(e, 'errno', None) != errno.EEXIST or not ok():
+                raise
 
 
 class MKLVersion(gof.Op):

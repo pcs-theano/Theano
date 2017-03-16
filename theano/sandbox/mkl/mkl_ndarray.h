@@ -1,0 +1,100 @@
+#ifndef _MKL_NDARRAY_H_
+#define _MKL_NDARRAY_H_
+
+#include <numpy/arrayobject.h>
+#include <stdio.h>
+#include <stdint.h>
+#include "mkl_dnn.h"
+
+#ifndef SIZE_MAX
+#define SIZE_MAX ((size_t) - 1)
+#endif
+
+#ifndef Py_TYPE
+#define Py_TYPE(o) ((o)->ob_type)
+#endif
+
+#define MAX_NDIM (16)
+
+char* MKL_TYPE[] = {"", "", "", "int16", "", "int32", "", "int64",
+                    "", "", "", "float32", "float64", ""};
+
+#if PY_MAJOR_VERSION >= 3
+// Py3k treats all ints as longs. This one is not caught by npy_3kcompat.h.
+#define PyNumber_Int PyNumber_Long
+
+#include "numpy/npy_3kcompat.h"
+
+// Py3k strings are unicode, these mimic old functionality.
+//
+// NOTE: npy_3kcompat.h replaces PyString_X with PyBytes_X, which breaks
+// compatibility with some functions returning text.
+#define PyString_Check PyUnicode_Check
+#define PyString_FromString PyUnicode_FromString
+#define PyString_AsString PyUnicode_AsUTF8
+#define PyString_FromStringAndSize PyUnicode_FromStringAndSize
+#define PyString_Size PyUnicode_GET_SIZE
+#define PyInt_FromSize_t PyLong_FromSize_t
+
+// Python 3 expects a PyObject* as the first argument to PySlice_GetIndicesEx().
+#define SLICE_CAST(x) (x)
+#else
+// Python 2 expects a PySliceObject* as the first argument to PySlice_GetIndicesEx().
+#define SLICE_CAST(x) ((PySliceObject*)(x))
+#endif // end #if PY_MAJOR_VERSION >= 3
+
+
+typedef enum __PRIMITIVE_KINDS__{
+    prim_undefined = 0,
+    prim_conv,
+    prim_relu,
+    prim_pooling,
+    prim_lrn,
+    prim_bn,
+    prim_sum,
+    prim_concat,
+    prim_inner_product,
+    prim_softmax,
+}primitive_kinds_t;
+
+
+/**
+ * struct : wrapper for MKL internal data and layout
+ *
+ * This is a Python type.
+ *
+ * A fixed length 32 is specified to user_structure. So MKLNdarray can describe an array whose ndim is <=16 (MAX_NDIM).
+ *
+ * To avoid calling malloc and free for many times.
+ *
+ */
+typedef struct __MKLNdarray__{
+
+    PyObject_HEAD
+    PyObject * base;
+
+    /* Type-specific fields go here. */
+    int nd;                    // the number of dimensions of the tensor, maximum is 16 (MAX_NDIM).
+    int dtype;                 // an integer type number is given here.
+    size_t mkldata_size;       // the number of bytes allocated for mkl_data
+    size_t user_structure[32]; // user layout: [size0, size1, ..., stride0, stride1, ..., 0, 0].
+    dnnLayout_t mkl_layout;
+    void* mkl_data;
+    void* mkl_workspace;
+}MKLNdarray;
+
+
+__attribute__((visibility ("default"))) int MKLNdarray_Check(const PyObject* ob);
+__attribute__((visibility ("default"))) PyObject* MKLNdarray_New(int nd, int typenum);
+__attribute__((visibility ("default"))) int MKLNdarray_CopyFromArray(MKLNdarray* self, PyArrayObject* obj);
+__attribute__((visibility ("default"))) int MKLNdarray_set_structure(MKLNdarray* self, int nd, size_t* dims);
+__attribute__((visibility ("default"))) PyObject* MKLNdarray_CreateArrayObj(MKLNdarray* self);
+
+__attribute__((visibility ("default"))) void* MKLNdarray_DATA(const MKLNdarray* self);
+__attribute__((visibility ("default"))) void* MKLNdarray_WORKSPACE(const MKLNdarray* self);
+__attribute__((visibility ("default"))) dnnLayout_t* MKLNdarray_LAYOUT(const MKLNdarray* self);
+__attribute__((visibility ("default"))) const size_t* MKLNdarray_DIMS(const MKLNdarray* self);
+__attribute__((visibility ("default"))) const size_t* MKLNdarray_STRIDES(const MKLNdarray* self);
+__attribute__((visibility ("default"))) int MKLNdarray_NDIM(const MKLNdarray* self);
+__attribute__((visibility ("default"))) int MKLNdarray_TYPE(const MKLNdarray* self);
+#endif

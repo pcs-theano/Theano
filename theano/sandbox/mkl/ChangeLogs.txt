@@ -1,3 +1,12 @@
+Date: 2017/03/16
+Author: lvtao
+Changes:
+----------------------------------
+1. Add MKLNdarray data type. Compile mkl_ndarray.c/.h into library when mkl
+module is loaded.
+2. Add some test code to mkl/tests/ for MKLNdarray.
+
+
 Date: 2017/01/23
 Author: lvtao
 Changes:
