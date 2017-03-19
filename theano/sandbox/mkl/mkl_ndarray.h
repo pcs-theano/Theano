@@ -14,7 +14,9 @@
 #define Py_TYPE(o) ((o)->ob_type)
 #endif
 
-#define MAX_NDIM (16)
+#define MAX_NDIM     (16)
+#define MKL_FLOAT32  (11)
+#define MKL_FLOAT64  (12)
 
 char* MKL_TYPE[] = {"", "", "", "int16", "", "int32", "", "int64",
                     "", "", "", "float32", "float64", ""};
@@ -63,7 +65,7 @@ typedef enum __PRIMITIVE_KINDS__{
  *
  * This is a Python type.
  *
- * A fixed length 32 is specified to user_structure. So MKLNdarray can describe an array whose ndim is <=16 (MAX_NDIM).
+ * A fixed length 2*MAX_NDIM is specified to user_structure. So MKLNdarray can describe an array whose ndim is <=16 (MAX_NDIM).
  *
  * To avoid calling malloc and free for many times.
  *
@@ -74,13 +76,13 @@ typedef struct __MKLNdarray__{
     PyObject * base;
 
     /* Type-specific fields go here. */
-    int nd;                    // the number of dimensions of the tensor, maximum is 16 (MAX_NDIM).
-    int dtype;                 // an integer type number is given here.
-    size_t mkldata_size;       // the number of bytes allocated for mkl_data
-    size_t user_structure[32]; // user layout: [size0, size1, ..., stride0, stride1, ..., 0, 0].
-    dnnLayout_t mkl_layout;
-    void* mkl_data;
-    void* mkl_workspace;
+    int         nd;                             // the number of dimensions of the tensor, maximum is 16 (MAX_NDIM).
+    int         dtype;                          // an integer type number is given here.
+    size_t      data_size;                      // the number of bytes allocated for mkl_data
+    size_t      user_structure[2 * MAX_NDIM];   // user layout: [size0, size1, ..., stride0, stride1, ..., 0, 0].
+    dnnLayout_t private_layout;                 // layout instance create by MKL APIs
+    void*       private_data;                   // data buffer
+    void*       private_workspace;              // computation workspace for forward and backward
 }MKLNdarray;
 
 

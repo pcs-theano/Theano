@@ -132,22 +132,22 @@ class U2I_BN(BaseConvertOp):
 
         CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_user, DIMENSION, bottomSize, bottomStride), err);
         CHECK_ERR( dnnBatchNormalizationCreateForward_%(precision)s(&primitive, NULL, layout_user, %(eps)s), err);
-        CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&(%(z)s->mkl_layout), primitive, dnnResourceSrc), err);
+        CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&(%(z)s->private_layout), primitive, dnnResourceSrc), err);
 
-        if (!dnnLayoutCompare_%(precision)s(layout_user, %(z)s->mkl_layout)) {
+        if (!dnnLayoutCompare_%(precision)s(layout_user, %(z)s->private_layout)) {
             if (NULL == to_internal) {
-                CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_user, %(z)s->mkl_layout), err);
+                CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_user, %(z)s->private_layout), err);
             }
         }
 
-        CHECK_ERR( dnnAllocateBuffer_%(precision)s(&(%(z)s->mkl_data), %(z)s->mkl_layout), err);
+        CHECK_ERR( dnnAllocateBuffer_%(precision)s(&(%(z)s->private_data), %(z)s->private_layout), err);
 
         if (to_internal) {
             printf("bn convert\\n");
-            CHECK_ERR( dnnConversionExecute_%(precision)s(to_internal, PyArray_DATA(%(x)s), %(z)s->mkl_data), err);
+            CHECK_ERR( dnnConversionExecute_%(precision)s(to_internal, PyArray_DATA(%(x)s), %(z)s->private_data), err);
         } else {
             printf("bn no convert \\n");
-            memcpy(%(z)s->mkl_data, PyArray_DATA(%(x)s), dnnLayoutGetMemorySize_%(precision)s(%(z)s->mkl_layout));
+            memcpy(%(z)s->private_data, PyArray_DATA(%(x)s), dnnLayoutGetMemorySize_%(precision)s(%(z)s->private_layout));
         }
 
         // printf("BN CONVERT OK \\n");
@@ -216,21 +216,21 @@ class I2IBN(BaseConvertOp):
                 %(fail)s;
             }
 
-            CHECK_ERR( dnnBatchNormalizationCreateForward_%(precision)s(&primitive, NULL, %(x)s->mkl_layout, %(eps)s), err);
-            CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&(%(z)s->mkl_layout), primitive, dnnResourceSrc), err);
+            CHECK_ERR( dnnBatchNormalizationCreateForward_%(precision)s(&primitive, NULL, %(x)s->private_layout, %(eps)s), err);
+            CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&(%(z)s->private_layout), primitive, dnnResourceSrc), err);
 
-            if (!dnnLayoutCompare_%(precision)s(%(x)s->mkl_layout, %(z)s->mkl_layout)) {
+            if (!dnnLayoutCompare_%(precision)s(%(x)s->private_layout, %(z)s->private_layout)) {
                 if (NULL == to_internal) {
-                    CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, %(x)s->mkl_layout, %(z)s->mkl_layout), err);
+                    CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, %(x)s->private_layout, %(z)s->private_layout), err);
                 }
             }
 
-            CHECK_ERR( dnnAllocateBuffer_%(precision)s(&(%(z)s->mkl_data), %(z)s->mkl_layout), err);
+            CHECK_ERR( dnnAllocateBuffer_%(precision)s(&(%(z)s->private_data), %(z)s->private_layout), err);
 
             if (to_internal) {
-                CHECK_ERR( dnnConversionExecute_%(precision)s(to_internal, %(x)s->mkl_data, %(z)s->mkl_data), err);
+                CHECK_ERR( dnnConversionExecute_%(precision)s(to_internal, %(x)s->private_data, %(z)s->private_data), err);
             } else {
-                memcpy(%(z)s->mkl_data, %(x)s->mkl_data, dnnLayoutGetMemorySize_%(precision)s(%(z)s->mkl_layout));
+                memcpy(%(z)s->private_data, %(x)s->private_data, dnnLayoutGetMemorySize_%(precision)s(%(z)s->private_layout));
             }
 
         """ % locals()
@@ -381,24 +381,24 @@ class U2I_Conv(BaseConvertOp):
         CHECK_ERR( dnnConvolutionCreateForward_%(precision)s(&primitive, NULL,
                                dnnAlgorithmConvolutionDirect, DIMENSION, imageSize, zSize,
                                weightSize, convStride, convPadding, dnnBorderZeros), err );
-        CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&(%(z)s->mkl_layout), primitive, dnnResourceSrc), err );
+        CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&(%(z)s->private_layout), primitive, dnnResourceSrc), err );
 
-        if (!dnnLayoutCompare_%(precision)s(layout_user, %(z)s->mkl_layout)) {
+        if (!dnnLayoutCompare_%(precision)s(layout_user, %(z)s->private_layout)) {
             if (NULL == to_internal) {
-                CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_user, %(z)s->mkl_layout), err );
+                CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_user, %(z)s->private_layout), err );
             }
         }
 
-        if (NULL == %(z)s->mkl_data) {
-            CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&(%(z)s->mkl_data), %(z)s->mkl_layout), err );
+        if (NULL == %(z)s->private_data) {
+            CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&(%(z)s->private_data), %(z)s->private_layout), err );
         }
 
         if (to_internal) {
             printf("conv convert \\n");
-            CHECK_ERR( dnnConversionExecute_%(precision)s(to_internal, PyArray_DATA(%(x)s), %(z)s->mkl_data), err );
+            CHECK_ERR( dnnConversionExecute_%(precision)s(to_internal, PyArray_DATA(%(x)s), %(z)s->private_data), err );
         } else {
             printf("conv no convert \\n");
-            memcpy(%(z)s->mkl_data, PyArray_DATA(%(x)s), dnnLayoutGetMemorySize_%(precision)s(%(z)s->mkl_layout));
+            memcpy(%(z)s->private_data, PyArray_DATA(%(x)s), dnnLayoutGetMemorySize_%(precision)s(%(z)s->private_layout));
         }
 
         first_run = 0;
