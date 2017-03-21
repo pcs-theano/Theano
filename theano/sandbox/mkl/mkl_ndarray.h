@@ -89,7 +89,7 @@ typedef struct __MKLNdarray__{
 __attribute__((visibility ("default"))) int MKLNdarray_Check(const PyObject* ob);
 __attribute__((visibility ("default"))) PyObject* MKLNdarray_New(int nd, int typenum);
 __attribute__((visibility ("default"))) int MKLNdarray_CopyFromArray(MKLNdarray* self, PyArrayObject* obj);
-__attribute__((visibility ("default"))) int MKLNdarray_set_structure(MKLNdarray* self, int nd, size_t* dims);
+__attribute__((visibility ("default"))) int MKLNdarray_set_structure(MKLNdarray* self, int nd, const size_t* dims);
 __attribute__((visibility ("default"))) PyObject* MKLNdarray_CreateArrayObj(MKLNdarray* self);
 
 __attribute__((visibility ("default"))) void* MKLNdarray_DATA(const MKLNdarray* self);

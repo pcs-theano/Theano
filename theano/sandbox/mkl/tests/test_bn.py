@@ -70,7 +70,7 @@ class test_mkl_bn_forward(unittest.TestCase):
         assert numpy.allclose(new_out, ref_out)
     '''
 
-
+"""
 class test_mkl_bn_backward(unittest.TestCase):
     def test_bn_value(self):
         X = T.ftensor4('x')
@@ -89,6 +89,6 @@ class test_mkl_bn_backward(unittest.TestCase):
         sval = numpy.random.rand(5).astype(numpy.float32)
         tval = numpy.random.rand(5).astype(numpy.float32)
         fgrad(ival, sval, tval)
-
+"""
 if __name__ == '__main__':
     unittest.main()

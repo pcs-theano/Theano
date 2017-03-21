@@ -363,7 +363,7 @@ MKLNdarray_allocate_mkl_buffer(MKLNdarray *self) {
  * dims: dimension info
  *
  */
-int MKLNdarray_set_structure(MKLNdarray *self, int nd, size_t *dims) {
+int MKLNdarray_set_structure(MKLNdarray *self, int nd, const size_t *dims) {
 
     assert (self->nd == nd);
 

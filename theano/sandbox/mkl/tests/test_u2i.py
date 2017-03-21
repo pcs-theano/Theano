@@ -54,8 +54,6 @@ def test_i2i():
     print(o)
 
 
-
-#@profile
 def test_chain_1():
     x = tensor.ftensor4('x')
     y = u2i_op.U2I_Conv(imshp=(64, 3, 256, 256), kshp=(32, 3, 3, 3))(x)
@@ -66,7 +64,7 @@ def test_chain_1():
     o = f(a)
     assert numpy.allclose(a, o)
 
-#@profile
+"""
 def test_chain_2():
     x = tensor.ftensor4('x')
     y = basic_ops.U2IConv(imshp=(64, 3, 256, 256), kshp=(32, 3, 3, 3))(x)
@@ -76,12 +74,12 @@ def test_chain_2():
     a = numpy.random.rand(64, 3, 256, 256).astype(numpy.float32)
     o = f(a)
     assert numpy.allclose(a, o)
-
+"""
 
 if __name__ == "__main__":
     test_i2u()
     test_u2i()
     test_i2i()
     test_chain_1()
-    test_chain_2()
+    # test_chain_2()
 
