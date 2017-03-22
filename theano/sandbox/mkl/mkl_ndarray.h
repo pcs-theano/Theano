@@ -99,4 +99,5 @@ __attribute__((visibility ("default"))) const size_t* MKLNdarray_DIMS(const MKLN
 __attribute__((visibility ("default"))) const size_t* MKLNdarray_STRIDES(const MKLNdarray* self);
 __attribute__((visibility ("default"))) int MKLNdarray_NDIM(const MKLNdarray* self);
 __attribute__((visibility ("default"))) int MKLNdarray_TYPE(const MKLNdarray* self);
+__attribute__((visibility ("default"))) int MKLNdarray_create_layout_buffer(MKLNdarray *self, const dnnPrimitive_t *prim, dnnResourceType_t res_num);
 #endif

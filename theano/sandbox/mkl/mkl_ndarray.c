@@ -26,8 +26,10 @@ MKLNdarray_uninit(MKLNdarray *self) {
         if (self->private_data) {
             rval = dnnReleaseBuffer_F64(self->private_data);
 
-            if (rval != 0) {
-                PyErr_SetString(PyExc_RuntimeError, "MKLNdarray_uninit: fail to release data \n");
+            if (rval != E_SUCCESS) {
+                PyErr_Format(PyExc_RuntimeError,
+                             "MKLNdarray_uninit: fail to release data: %d, line: %d",
+                             rval, __LINE__);
             }
 
             self->private_data = NULL;
@@ -37,8 +39,10 @@ MKLNdarray_uninit(MKLNdarray *self) {
         if (self->private_layout) {
             rval = dnnLayoutDelete_F64(self->private_layout);
 
-            if (rval != 0) {
-                PyErr_SetString(PyExc_RuntimeError, "MKLNdarray_uninit: fail to release layout \n");
+            if (rval != E_SUCCESS) {
+                PyErr_Format(PyExc_RuntimeError,
+                             "MKLNdarray_uninit: fail to release layout: %d, line: %d",
+                             rval, __LINE__);
             }
 
             self->private_layout = NULL;
@@ -47,8 +51,10 @@ MKLNdarray_uninit(MKLNdarray *self) {
         if (self->private_workspace) {
             rval = dnnReleaseBuffer_F64(self->private_workspace);
 
-            if (rval != 0) {
-                PyErr_SetString(PyExc_RuntimeError, "MKLNdarray_uninit: fail to release workspace \n");
+            if (rval != E_SUCCESS) {
+                PyErr_Format(PyExc_RuntimeError,
+                             "MKLNdarray_uninit: fail to release workspace: %d, line: %d",
+                             rval, __LINE__);
             }
 
             self->private_workspace = NULL;
@@ -57,8 +63,10 @@ MKLNdarray_uninit(MKLNdarray *self) {
         if (self->private_data) {
             rval = dnnReleaseBuffer_F32(self->private_data);
 
-            if (rval != 0) {
-                PyErr_SetString(PyExc_RuntimeError, "MKLNdarray_uninit: fail to release data \n");
+            if (rval != E_SUCCESS) {
+                PyErr_Format(PyExc_RuntimeError,
+                             "MKLNdarray_uninit: fail to release data: %d, line: %d",
+                             rval, __LINE__);
             }
 
             self->private_data = NULL;
@@ -68,8 +76,10 @@ MKLNdarray_uninit(MKLNdarray *self) {
         if (self->private_layout) {
             rval = dnnLayoutDelete_F32(self->private_layout);
 
-            if (rval != 0) {
-                PyErr_SetString(PyExc_RuntimeError, "MKLNdarray_uninit: fail to release layout \n");
+            if (rval != E_SUCCESS) {
+                PyErr_Format(PyExc_RuntimeError,
+                             "MKLNdarray_uninit: fail to release layout: %d, line: %d",
+                             rval, __LINE__);
             }
 
             self->private_layout = NULL;
@@ -78,8 +88,10 @@ MKLNdarray_uninit(MKLNdarray *self) {
         if (self->private_workspace) {
             rval = dnnReleaseBuffer_F32(self->private_workspace);
 
-            if (rval != 0) {
-                PyErr_SetString(PyExc_RuntimeError, "MKLNdarray_uninit: fail to release workspace \n");
+            if (rval != E_SUCCESS) {
+                PyErr_Format(PyExc_RuntimeError,
+                             "MKLNdarray_uninit: fail to release workspace: %d, line: %d",
+                             rval, __LINE__);
             }
 
             self->private_workspace = NULL;
@@ -284,6 +296,137 @@ MKLNdarray_LAYOUT(const MKLNdarray *self) {
 }
 
 
+
+/*
+ * Create private layout and buffer for a MKLNdarray.
+ *
+ * If res_num is dnnResourceWorkspace, private_workspace will be allocated for MKLNdarray.
+ *
+ * Still need further check for res_num. It should among  Src, Dst, DiffSrc, Workspace, DiffFilter,...
+ */
+int MKLNdarray_create_layout_buffer(MKLNdarray *self, const dnnPrimitive_t *prim, dnnResourceType_t res_num) {
+    if (self->nd < 0 || self->dtype < 0) {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "MKLNdarray_create_layout_buffer: Can't create layout and buffer for a uninitialized MKLNdarray");
+        return -1;
+    }
+
+    if (NULL == prim) {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "MKLNdarray_create_layout_buffer: Can't create layout and buffer with an empty primtive");
+        return -1;
+    }
+    
+    int status = 0;
+    if (self->dtype == MKL_FLOAT64) {  // for float64
+        if (res_num == dnnResourceWorkspace) {
+            dnnLayout_t layout_workspace = NULL;
+            if (self->private_workspace != NULL) {
+                PyErr_SetString(PyExc_RuntimeError,
+                                "MKLNdarray_create_layout_buffer: Can't create buffer for workspace repeatly");
+                return -1;
+            }
+
+            status = dnnLayoutCreateFromPrimitive_F64(&layout_workspace, *prim, res_num);
+            if (E_SUCCESS != status || NULL == layout_workspace) {
+                PyErr_Format(PyExc_RuntimeError,
+                             "MKLNdarray_create_layout_buffer: Create layout for workspace failed: %d, line: %d",
+                             status, __LINE__);
+                return -1;
+            }
+
+            status = dnnAllocateBuffer_F64(&(self->private_workspace), layout_workspace);
+            if (E_SUCCESS != status || NULL == self->private_workspace) {
+                PyErr_Format(PyExc_RuntimeError,
+                             "MKLNdarray_create_layout_buffer: Create buffer for workspace failed: %d, line: %d",
+                             status, __LINE__);
+                dnnLayoutDelete_F64(layout_workspace);
+                layout_workspace = NULL;
+                return -1;
+            }
+
+            dnnLayoutDelete_F64(layout_workspace);
+            layout_workspace = NULL;
+        } else {
+            if (NULL != self->private_layout || NULL != self->private_data) {
+                PyErr_SetString(PyExc_RuntimeError,
+                                "MKLNdarray_create_layout_buffer: Can't create layout or buffer for MKLNdarray repeatly");
+                return -1;
+            }
+
+            status = dnnLayoutCreateFromPrimitive_F64(&(self->private_layout), *prim, res_num);
+            if (E_SUCCESS != status || NULL == self->private_layout) {
+                PyErr_Format(PyExc_RuntimeError,
+                             "MKLNdarray_create_layout_buffer: Create private layout failed: %d, line: %d",
+                             status, __LINE__);
+                return -1;
+            }
+
+            status = dnnAllocateBuffer_F64(&(self->private_data), self->private_layout);
+            if (E_SUCCESS != status || NULL == self->private_data) {
+                PyErr_Format(PyExc_RuntimeError,
+                             "MKLNdarray_create_layout_buffer: Create private data failed: %d, line: %d",
+                             status, __LINE__);
+                return -1;
+            }
+        }
+    } else {  // for float32
+        if (res_num == dnnResourceWorkspace) {
+            dnnLayout_t layout_workspace = NULL;
+            if (self->private_workspace != NULL) {
+                PyErr_SetString(PyExc_RuntimeError,
+                                "MKLNdarray_create_layout_buffer: Can't create buffer for workspace repeatly");
+                return -1;
+            }
+
+            status = dnnLayoutCreateFromPrimitive_F32(&layout_workspace, *prim, res_num);
+            if (E_SUCCESS != status || NULL == layout_workspace) {
+                PyErr_Format(PyExc_RuntimeError,
+                             "MKLNdarray_create_layout_buffer: Create layout for workspace failed: %d, line: %d",
+                             status, __LINE__);
+                return -1;
+            }
+
+            status = dnnAllocateBuffer_F32(&(self->private_workspace), layout_workspace);
+            if (E_SUCCESS != status || NULL == self->private_workspace) {
+                PyErr_Format(PyExc_RuntimeError,
+                             "MKLNdarray_create_layout_buffer: Create buffer for workspace failed: %d, line: %d",
+                             status, __LINE__);
+                dnnLayoutDelete_F32(layout_workspace);
+                layout_workspace = NULL;
+                return -1;
+            }
+
+            dnnLayoutDelete_F32(layout_workspace);
+            layout_workspace = NULL;
+        } else {
+            if (NULL != self->private_layout || NULL != self->private_data) {
+                PyErr_SetString(PyExc_RuntimeError,
+                                "MKLNdarray_create_layout_buffer: Can't create layout or buffer for MKLNdarray repeatly");
+                return -1;
+            }
+
+            status = dnnLayoutCreateFromPrimitive_F32(&(self->private_layout), *prim, res_num);
+            if (E_SUCCESS != status || NULL == self->private_layout) {
+                PyErr_Format(PyExc_RuntimeError,
+                             "MKLNdarray_create_layout_buffer: Create private layout failed: %d, line: %d",
+                             status, __LINE__);
+                return -1;
+            }
+
+            status = dnnAllocateBuffer_F32(&(self->private_data), self->private_layout);
+            if (E_SUCCESS != status || NULL == self->private_data) {
+                PyErr_Format(PyExc_RuntimeError,
+                             "MKLNdarray_create_layout_buffer: Create private data failed: %d, line: %d",
+                             status, __LINE__);
+                return -1;
+            }
+        }
+    }
+    return 0;
+}
+
+
 /*
  * In this function a plain layout is created for self.
  *
@@ -313,7 +456,7 @@ MKLNdarray_allocate_mkl_buffer(MKLNdarray *self) {
                                          ndim,
                                          self->user_structure,
                                          self->user_structure + self->nd);
-        if (0 != status || NULL == self->private_layout) {
+        if (E_SUCCESS != status || NULL == self->private_layout) {
             PyErr_Format(PyExc_RuntimeError,
                          "Call dnnLayoutCreate_F64 failed: %d",
                          status);
@@ -321,7 +464,7 @@ MKLNdarray_allocate_mkl_buffer(MKLNdarray *self) {
         }
 
         status = dnnAllocateBuffer_F64(&(self->private_data), self->private_layout);
-        if (0 != status || NULL == self->private_data) {
+        if (E_SUCCESS != status || NULL == self->private_data) {
             PyErr_Format(PyExc_RuntimeError,
                          "Call dnnAllocateBuffer_F64 failed: %d",
                          status);
@@ -334,7 +477,7 @@ MKLNdarray_allocate_mkl_buffer(MKLNdarray *self) {
                                                  ndim,
                                                  self->user_structure,
                                                  self->user_structure + self->nd);
-        if (0 != status || NULL == self->private_layout) {
+        if (E_SUCCESS != status || NULL == self->private_layout) {
             PyErr_Format(PyExc_RuntimeError,
                          "Call dnnLayoutCreate_F32 failed: %d",
                          status);
@@ -342,7 +485,7 @@ MKLNdarray_allocate_mkl_buffer(MKLNdarray *self) {
         }
 
         status = dnnAllocateBuffer_F32(&(self->private_data), self->private_layout);
-        if (0 != status || NULL == self->private_data) {
+        if (E_SUCCESS != status || NULL == self->private_data) {
             PyErr_Format(PyExc_RuntimeError,
                          "Call dnnAllocateBuffer_F32 failed: %d",
                          status);
@@ -526,7 +669,7 @@ static PyObject*
 MKLNdarray_get_shape(MKLNdarray *self, void *closure) {
 
     if (self->nd < 0 || self->dtype < 0) {
-        PyErr_SetString(PyExc_RuntimeError, "MKLNdarray not initialized");
+        PyErr_SetString(PyExc_RuntimeError, "MKLNdarray_get_shape: MKLNdarray not initialized");
         return NULL;
     }
 
@@ -558,7 +701,7 @@ static PyObject*
 MKLNdarray_get_dtype(MKLNdarray *self, void *closure) {
 
     if (self->nd < 0 || self->dtype < 0) {
-        PyErr_SetString(PyExc_RuntimeError, "MKLNdarray not initialized");
+        PyErr_SetString(PyExc_RuntimeError, "MKLNdarray_get_dtype: MKLNdarray not initialized");
         return NULL;
     }
 
@@ -631,7 +774,8 @@ PyObject* MKLNdarray_CreateArrayObj(MKLNdarray *self) {
     if (self->nd < 0 ||
         self->private_data == NULL ||
         self->private_layout == NULL) {
-        PyErr_SetString(PyExc_RuntimeError, "Can't convert from a uninitialized MKLNdarray");
+        PyErr_SetString(PyExc_RuntimeError,
+                        "MKLNdarray_CreateArrayObj: Can't convert from a uninitialized MKLNdarray");
         return NULL;
     }
 
@@ -675,49 +819,75 @@ PyObject* MKLNdarray_CreateArrayObj(MKLNdarray *self) {
                                      mkl_stride);
 
         if (status != 0 || layout_user == NULL) {
-            PyErr_Format(PyExc_RuntimeError, "MKLNdarray_CreateArrayObj: dnnLayoutCreate_F64 failed");
+            PyErr_Format(PyExc_RuntimeError,
+                         "MKLNdarray_CreateArrayObj: dnnLayoutCreate_F64 failed: %d, line: %d",
+                         status, __LINE__);
             Py_DECREF(rval);
             return NULL;
         }
 
         status = dnnConversionCreate_F64(&primitive, self->private_layout, layout_user);
-        if (status != 0 || primitive == NULL) {
-            PyErr_Format(PyExc_RuntimeError, "MKLNdarray_CreateArrayObj: dnnConversionCreate_F64 failed");
+        if (E_SUCCESS != status) {
+            PyErr_Format(PyExc_RuntimeError,
+                         "MKLNdarray_CreateArrayObj: dnnConversionCreate_F64 failed: %d, line: %d",
+                         status, __LINE__);
             Py_DECREF(rval);
             return NULL;
+        }
+        
+        if (NULL != primitive) {
+            status = dnnConversionExecute_F64(primitive, (void*)self->private_data, (void*)rval_data);
+            if (E_SUCCESS != status) {
+                PyErr_Format(PyExc_RuntimeError,
+                             "MKLNdarray_CreateArrayObj: dnnConversionExecute_F64 failed: %d, line: %d",
+                             status, __LINE__);
+                Py_DECREF(rval);
+                return NULL;
+            }
+        } else {
+            memcpy((void*)rval_data, (void*)self->private_data, PyArray_SIZE(rval) * sizeof (double));
         }
 
-        status = dnnConversionExecute_F64(primitive, (void*)self->private_data, (void*)rval_data);
-        if (status != 0) {
-            PyErr_Format(PyExc_RuntimeError, "MKLNdarray_CreateArrayObj: dnnExecute_F64 failed");
-            Py_DECREF(rval);
-            return NULL;
-        }
+        if (NULL != layout_user) dnnLayoutDelete_F64(layout_user);
+        if (NULL != primitive) dnnDelete_F64(primitive);
+
     } else {  // float32
         status = dnnLayoutCreate_F32(&layout_user,
                                      self->nd,
                                      mkl_size,
                                      mkl_stride);
 
-        if (status != 0 || layout_user == NULL) {
-            PyErr_Format(PyExc_RuntimeError, "MKLNdarray_CreateArrayObj: dnnLayoutCreate_F32 failed");
+        if (status != E_SUCCESS || layout_user == NULL) {
+            PyErr_Format(PyExc_RuntimeError,
+                         "MKLNdarray_CreateArrayObj: dnnLayoutCreate_F32 failed: %d, line: %d",
+                         status, __LINE__);
             Py_DECREF(rval);
             return NULL;
         }
 
         status = dnnConversionCreate_F32(&primitive, self->private_layout, layout_user);
-        if (status != 0 || primitive == NULL) {
-            PyErr_Format(PyExc_RuntimeError, "MKLNdarray_CreateArrayObj: dnnConversionCreate_F32 failed, %d", status);
+        if (E_SUCCESS != status) {
+            PyErr_Format(PyExc_RuntimeError,
+                         "MKLNdarray_CreateArrayObj: dnnConversionCreate_F32 failed: %d, line: %d",
+                         status, __LINE__);
             Py_DECREF(rval);
             return NULL;
+        }
+        if (NULL != primitive) {
+            status = dnnConversionExecute_F32(primitive, (void*)self->private_data, (void*)rval_data);
+            if (E_SUCCESS != status) {
+                PyErr_Format(PyExc_RuntimeError,
+                             "MKLNdarray_CreateArrayObj: dnnConversionExecute_F32 failed: %d, line: %d",
+                             status, __LINE__);
+                Py_DECREF(rval);
+                return NULL;
+            }
+        } else {
+            memcpy((void*)rval_data, (void*)self->private_data, PyArray_SIZE(rval) * sizeof (float));
         }
 
-        status = dnnConversionExecute_F32(primitive, (void*)self->private_data, (void*)rval_data);
-        if (status != 0) {
-            PyErr_Format(PyExc_RuntimeError, "MKLNdarray_CreateArrayObj: dnnExecute_F32 failed");
-            Py_DECREF(rval);
-            return NULL;
-        }
+        if (NULL != layout_user) dnnLayoutDelete_F32(layout_user);
+        if (NULL != primitive) dnnDelete_F32(primitive);
     }
 
     return (PyObject*)rval;
@@ -985,13 +1155,14 @@ MKLNdarray_New(int nd, int typenum) {
 
     if (nd < 0 || nd > MAX_NDIM) {
         PyErr_Format(PyExc_ValueError,
-                        "MKLNdarray does not support a %d-dim array. Try array which ndim is <= %d", nd, MAX_NDIM);
+                     "MKLNdarray_New: not support a %d-dim array. Try array which ndim is <= %d. line: %d",
+                     nd, MAX_NDIM, __LINE__);
         return NULL;
     }
 
     MKLNdarray* self = (MKLNdarray*)(MKLNdarrayType.tp_alloc(&MKLNdarrayType, 0));
     if (self == NULL) {
-        PyErr_SetString(PyExc_RuntimeError, "MKLNdarray_New failed to allocate self");
+        PyErr_SetString(PyExc_RuntimeError, "MKLNdarray_New: failed to allocate self");
         return NULL;
     }
 

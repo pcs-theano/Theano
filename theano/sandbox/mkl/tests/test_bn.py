@@ -40,7 +40,6 @@ class test_mkl_bn_forward(unittest.TestCase):
         except Exception as e:
             raise Exception('test_bn_U2I_wrong_dim: ' + str(e))
 
-    '''
     def test_bn_value(self):
         X = T.ftensor4('x')
         Scale = T.vector('scale')
@@ -55,7 +54,7 @@ class test_mkl_bn_forward(unittest.TestCase):
         sval = numpy.random.rand(3).astype(numpy.float32)
         tval = numpy.random.rand(3).astype(numpy.float32)
         new_out = f(ival, sval, tval)
-
+        '''
         def bn_ref(x, G, B, M, V):
             n = (x - M) / V
             return G * n + B
@@ -68,7 +67,7 @@ class test_mkl_bn_forward(unittest.TestCase):
         f_ref = theano.function([X, Scale, Shift], bn_ref_op, mode=without_mkl)
         ref_out = f_ref(ival, sval, tval)
         assert numpy.allclose(new_out, ref_out)
-    '''
+        '''
 
 """
 class test_mkl_bn_backward(unittest.TestCase):

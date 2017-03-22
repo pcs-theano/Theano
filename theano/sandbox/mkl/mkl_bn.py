@@ -87,6 +87,9 @@ class BatchNormalization(basic_ops.MKLOp):
         # x = tensor.as_tensor_variable(x)
         scale = tensor.as_tensor_variable(scale)
         shift = tensor.as_tensor_variable(shift)
+
+        assert x.dtype == scale.dtype
+        assert x.dtype == shift.dtype
         return gof.Apply(self, [x, scale, shift], [x.type()])
 
     def grad(self, inp, grads):
@@ -99,11 +102,10 @@ class BatchNormalization(basic_ops.MKLOp):
 
     def c_support_code_struct(self, node, name):
         support_code = """
-            float* scale_buffer_ptr;
-            float* shift_buffer_ptr;
             dnnLayout_t layout_workspace;
             dnnLayout_t layout_x_internal;
             dnnLayout_t layout_scaleshift;
+            
             void *scaleShift_buffer;
             dnnPrimitive_t bnFwd;
             dnnPrimitive_t prim_to_internal;
@@ -114,9 +116,8 @@ class BatchNormalization(basic_ops.MKLOp):
             int x_channels;
             int x_row;
             int x_col;
-            int data_size;
-            size_t sizes[4];
-            size_t strides[4];
+            size_t sizes[DIMENSION];
+            size_t strides[DIMENSION];
             dnnError_t err;
             void* x_internal_buffer;
             void* bn_res[dnnResourceNumber];
@@ -125,17 +126,17 @@ class BatchNormalization(basic_ops.MKLOp):
 
     def c_init_code_struct(self, node, name, sub):
         init_code = """
-            scale_buffer_ptr = NULL;
-            shift_buffer_ptr = NULL;
             layout_workspace = NULL;
             layout_x_internal = NULL;
             layout_scaleshift = NULL;
 
-            scaleShift_buffer = static_cast<void*>(NULL);
+            scaleShift_buffer = NULL;
             bnFwd = NULL;
             prim_to_internal = NULL;    
-            first_run = 1;
             x_internal_buffer = NULL;
+
+            first_run = 1;
+            typenum = 0;
         """
         return init_code
 
@@ -149,8 +150,38 @@ class BatchNormalization(basic_ops.MKLOp):
             precision = 'F64'
 
         return """
-        dnnReleaseBuffer_%s(scaleShift_buffer);
-        """ % precision
+        // release layout
+        if (NULL != layout_workspace) {
+            dnnLayoutDelete_%(precision)s(layout_workspace);
+            layout_workspace = NULL;
+        }
+        if (NULL != layout_x_internal) {
+            dnnLayoutDelete_%(precision)s(layout_x_internal);
+            layout_x_internal = NULL;
+        }
+        if (NULL != layout_scaleshift) {
+            dnnLayoutDelete_%(precision)s(layout_scaleshift);
+            layout_scaleshift = NULL;
+        }
+        // release primitive
+        if (NULL != bnFwd) {
+            dnnDelete_%(precision)s(bnFwd);
+            bnFwd = NULL;
+        }
+        if (NULL != prim_to_internal) {
+            dnnDelete_%(precision)s(prim_to_internal);
+            prim_to_internal = NULL;
+        }
+        // release buffer
+        if (NULL != x_internal_buffer) {
+            dnnReleaseBuffer_%(precision)s(x_internal_buffer);
+            x_internal_buffer = NULL;
+        }
+        if (NULL != scaleShift_buffer) {
+            dnnReleaseBuffer_%(precision)s(scaleShift_buffer);
+            scaleShift_buffer = NULL;
+        }
+        """ % locals()
 
     def c_code(self, node, name, inp, out, sub):
         x, scale, shift, = inp
@@ -166,14 +197,19 @@ class BatchNormalization(basic_ops.MKLOp):
 
         if dtype is 'float32':
             precision = 'F32'
+            t = 'float'
         else:
             precision = 'F64'
+            t = 'double'
         
         fail = sub['fail']
 
         ret = """
         {
-            if(first_run) {
+            %(t)s* scale_buffer_ptr = NULL;
+            %(t)s* shift_buffer_ptr = NULL;
+
+            if (first_run) {
                 typenum    = MKLNdarray_TYPE((MKLNdarray*)%(x)s);
                 x_bs       = MKLNdarray_DIMS(%(x)s)[0];
                 x_channels = MKLNdarray_DIMS(%(x)s)[1];
@@ -183,25 +219,24 @@ class BatchNormalization(basic_ops.MKLOp):
                 sizes[1]   = x_row;
                 sizes[2]   = x_channels;
                 sizes[3]   = x_bs;
-                data_size  = x_bs * x_channels * x_row * x_col;
                 strides[0] = 1;
                 strides[1] = sizes[0];
                 strides[2] = strides[1] * sizes[1];
                 strides[3] = strides[2] * sizes[2];
             }
 
-            if(%(bias)s) {
-                scale_buffer_ptr = (float*)PyArray_DATA(%(scale)s);
-                shift_buffer_ptr = (float*)PyArray_DATA(%(shift)s);
+            if (%(bias)s) {
+                scale_buffer_ptr = (%(t)s*)PyArray_DATA(%(scale)s);
+                shift_buffer_ptr = (%(t)s*)PyArray_DATA(%(shift)s);
             }
 
-            if ((!%(z)s) ||
+            if ((! %(z)s) ||
                 (MKLNdarray_DIMS(%(z)s)[0] != MKLNdarray_DIMS(%(x)s)[0]) ||
                 (MKLNdarray_DIMS(%(z)s)[1] != MKLNdarray_DIMS(%(x)s)[1])) {
 
-                if(%(z)s) Py_XDECREF(%(z)s);
+                if (%(z)s) Py_XDECREF(%(z)s);
 
-                %(z)s = (MKLNdarray*) MKLNdarray_New(DIMENSION, typenum);
+                %(z)s = (MKLNdarray*)MKLNdarray_New(DIMENSION, typenum);
                 if (! %(z)s) {
                     %(fail)s;
                 }
@@ -235,17 +270,13 @@ class BatchNormalization(basic_ops.MKLOp):
                 // buffer for scaleshift
                 CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)(&scaleShift_buffer), layout_scaleshift), err);
 
-                dnnLayoutDelete_%(precision)s(layout_workspace);
-                dnnLayoutDelete_%(precision)s(layout_scaleshift);
-
-                // what does this mean?
                 if (!%(bias)s) {
                     for (int i = 0; i < x_channels; i++) {
-                        if(((float*)scaleShift_buffer)[i] != 1.0){
-                            std::cout<<"scale init failed! "<<((float*)scaleShift_buffer)[i]<<std::endl;
+                        if (((%(t)s*)scaleShift_buffer)[i] != 1.0){
+                            std::cout<<"scale init failed! "<<((%(t)s*)scaleShift_buffer)[i]<<std::endl;
                             exit(1);
                         }
-                        if(((float*)scaleShift_buffer)[x_channels + i] != 0) {
+                        if(((%(t)s*)scaleShift_buffer)[x_channels + i] != 0) {
                             std::cout<<"shift init failed!"<<std::endl;
                             exit(1);
                         }
@@ -279,10 +310,10 @@ class BatchNormalization(basic_ops.MKLOp):
             if (%(bias)s) {
                 // Read data from bias weight and bias term buffern to ScaleShift buffer
                 for (int i = 0; i < x_channels; i++) {
-                    ((float*)scaleShift_buffer)[i] = scale_buffer_ptr[i];
-                    ((float*)scaleShift_buffer)[x_channels + i] = 0;
+                    ((%(t)s*)scaleShift_buffer)[i] = scale_buffer_ptr[i];
+                    ((%(t)s*)scaleShift_buffer)[x_channels + i] = 0;
                     if (%(term)s) {
-                        ((float*)scaleShift_buffer)[x_channels + i] = shift_buffer_ptr[i];
+                        ((%(t)s*)scaleShift_buffer)[x_channels + i] = shift_buffer_ptr[i];
                     }
                 }
             }
@@ -309,19 +340,41 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
         self.eps = eps
         self.bias = bias
         self.term = term
-
-    def c_code_cleanup_struct(self, node, name, input_names, output_names, sub):
-        dtype = node.inputs[0].type.dtype
-        assert dtype in ('float32', 'float64')
-
-        if dtype is 'float32':
-            precision = 'F32'
-        else:
-            precision = 'F64'
-
-        return """
-        std::cout<<"releasing buffer\\n";
-        """ % precision
+    
+    def c_support_code_struct(self, node, name):
+        support_code = """
+        int first_run;
+        int typenum;
+        int x_bs;
+        int x_channels;
+        int x_row;
+        int x_col;
+        size_t sizes[DIMENSION];
+        size_t strides[DIMENSION];
+        dnnError_t err;
+        
+        // for backward wrt data
+        void* bn_res[dnnResourceNumber];
+        dnnPrimitive_t bnBwd;
+        dnnPrimitive_t prim_to_internal_gz;
+        dnnLayout_t layout_gz_internal;
+        dnnLayout_t layout_scaleshift;
+        void* gz_internal_buffer;
+        void* scaleShift_buffer;
+        
+        // for backward wrt scaleshift
+        void* BatchNormBwdScaleShift_res[dnnResourceNumber];
+        dnnPrimitive_t bnBwdScaleShift;
+        dnnPrimitive_t prim_to_internal_gz_gs;  // gs means gradient wrt scaleshift
+        dnnPrimitive_t prim_to_internal_x_gs;   // gs means gradient wrt scaleshift
+        dnnLayout_t layout_gz_internal_gs;      // gs means gradient wrt scaleshift, dnnResourceDiffDst
+        dnnLayout_t layout_x_internal_gs;       // gs means gradient wrt scaleshift, dnnResourceSrc
+        dnnLayout_t layout_gs_internal_gs;      // gs means gradient wrt scaleshift, dnnResourceDiffScaleShift
+        void* gz_internal_buffer_gs;            // gs means gradient wrt scaleshift
+        void* x_internal_buffer_gs;             // gs means gradient wrt scaleshift
+        void* gs_internal_buffer_gs;
+        """
+        return support_code
 
     def c_init_code_struct(self, node, name, sub):
         init_code = """
@@ -344,45 +397,89 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
             gz_internal_buffer_gs = NULL;
             x_internal_buffer_gs = NULL;
             scaleShift_buffer = NULL;
+            gs_internal_buffer_gs = NULL;
 
             first_run = 1;
+            typenum = 0;
         """
         return init_code
 
-    def c_support_code_struct(self, node, name):
-        support_code = """
-        int first_run;
-        int typenum;
-        int x_bs;
-        int x_channels;
-        int x_row;
-        int x_col;
-        size_t dim;
-        size_t sizes[4];
-        size_t strides[4];
-        dnnError_t e;
-        
-        void* bn_res[dnnResourceNumber];
-        void* BatchNormBwdScaleShift_res[dnnResourceNumber];
-        dnnPrimitive_t bnBwd;
-        dnnPrimitive_t bnBwdScaleShift;
-        dnnPrimitive_t prim_to_internal_gz;
-        dnnPrimitive_t prim_to_internal_gz_gs;
-        dnnPrimitive_t prim_to_internal_x_gs;
+    def c_code_cleanup_struct(self, node, name, input_names, output_names, sub):
+        dtype = node.inputs[0].type.dtype
+        assert dtype in ('float32', 'float64')
 
-        dnnLayout_t layout_gz_internal;
-        dnnLayout_t layout_gz_internal_gs;
-        dnnLayout_t layout_x_internal_gs;
-        dnnLayout_t layout_scaleshift;
+        if dtype is 'float32':
+            precision = 'F32'
+        else:
+            precision = 'F64'
 
-        void* gz_internal_buffer;
-        void* gz_internal_buffer_gs;
-        void* x_internal_buffer_gs;
-        float* scaleShift_buffer;
+        return """
+        // release layout
+        if (NULL != layout_gz_internal) {
+            dnnLayoutDelete_%(precision)s(layout_gz_internal);
+            layout_gz_internal = NULL;
+        }
+        if ( NULL != layout_x_internal_gs) {
+            dnnLayoutDelete_%(precision)s(layout_x_internal_gs);
+            layout_x_internal_gs = NULL;
+        }
+        if (NULL != layout_gz_internal_gs) {
+            dnnLayoutDelete_%(precision)s(layout_gz_internal_gs);
+            layout_gz_internal_gs = NULL;
+        }
+        if (NULL != layout_gs_internal_gs) {
+            dnnLayoutDelete_%(precision)s(layout_gs_internal_gs);
+            layout_gs_internal_gs = NULL;
+        }
+        if (NULL != layout_scaleshift) {
+            dnnLayoutDelet_%(precision)s(layout_scaleshift);
+            layout_scaleshift = NULL;
+        }
 
-        int data_size;
-        """
-        return support_code
+        // release primitive
+        if (NULL != bnBwd) {
+            dnnDelete_%(precision)s(dnnBwd);
+            dnnBwd = NULL;
+        }
+        if (NULL != bnBwdScaleShift) {
+            dnnDelete_%(precision)s(bnBwdScaleShift);
+            bnBwdScaleShift = NULL;
+        }
+        if (NULL != prim_to_internal_gz) {
+            dnnDelete_%(precision)s(prim_to_internal_gz);
+            prim_to_internal_gz = NULL;
+        }
+        if (NULL != prim_to_internal_gz_gs) {
+            dnnDelete_%(precision)s(prim_to_internal_gz_gs);
+            prim_to_internal_gz_gs = NULL;
+        }
+        if (NULL != prim_to_internal_x_gs) {
+            dnnDelete_%(precision)s(prim_to_internal_x_gs);
+            prim_to_internal_x_gs = NULL;
+        }
+
+        // release buffer
+        if (NULL != gz_internal_buffer) {
+            dnnReleaseBuffer_%(precision)s(gz_internal_buffer);
+            gz_internal_buffer = NULL;
+        }
+        if (NULL != gz_internal_buffer_gs) {
+            dnnReleaseBuffer_%(precision)s(gz_internal_buffer_gs);
+            gz_internal_buffer_gs = NULL;
+        }
+        if (NULL != x_internal_buffer_gs) {
+            dnnReleaseBuffer_%(precision)s(x_internal_buffer_gs);
+            x_internal_buffer_gs = NULL;
+        }
+        if (NULL != scaleShift_buffer) {
+            dnnReleaseBuffer_%(precision)s(scaleShift_buffer);
+            scaleShift_buffer = NULL;
+        }
+        if (NULL != gs_internal_buffer_gs) {
+            dnnReleaseBuffer_%(precision)s(gs_internal_buffer_gs);
+            gs_internal_buffer_gs = NULL;
+        }
+        """ % precision
 
     def make_node(self, x, gz, scale, shift):
         scale = as_tensor_variable(scale)
@@ -415,7 +512,7 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
             %(t)s *g_scale_buffer_ptr = NULL;
             %(t)s *g_shift_buffer_ptr = NULL;
 
-            if(first_run) {
+            if (first_run) {
                 typenum    = MKLNdarray_TYPE((MKLNdarray*)%(x)s);
                 x_bs       = MKLNdarray_DIMS(%(x)s)[0];
                 x_channels = MKLNdarray_DIMS(%(x)s)[1];
@@ -429,14 +526,13 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
                 strides[1] = sizes[0];
                 strides[2] = strides[1] * sizes[1];
                 strides[3] = strides[2] * sizes[2];
-                data_size  = x_bs * x_channels * x_row * x_col;
             }
 
             if ((!%(z)s)
               ||(MKLNdarray_DIMS(%(z)s)[0] != MKLNdarray_DIMS(%(x)s)[0])
               ||(MKLNdarray_DIMS(%(z)s)[1] != MKLNdarray_DIMS(%(x)s)[1])) {
 
-                if(%(z)s) Py_XDECREF(%(z)s);
+                if (%(z)s) Py_XDECREF(%(z)s);
                 %(z)s = (MKLNdarray*)MKLNdarray_New(DIMENSION, typenum);
                 if (! %(z)s) {
                     %(fail)s;
@@ -467,11 +563,11 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
 
                 if (!%(bias)s) {
                     for (int i = 0; i < x_channels; i++) {
-                        if(((float*)scaleShift_buffer)[i] != 1.0){
-                            std::cout<<"scale init failed! "<<((float*)scaleShift_buffer)[i]<<std::endl;
+                        if(((%(t)s*)scaleShift_buffer)[i] != 1.0){
+                            std::cout<<"scale init failed! "<<((%(t)s*)scaleShift_buffer)[i]<<std::endl;
                             exit(1);
                         }
-                        if(((float*)scaleShift_buffer)[x_channels + i] != 0) {
+                        if(((%(t)s*)scaleShift_buffer)[x_channels + i] != 0) {
                             std::cout<<"shift init failed!"<<std::endl;
                             exit(1);
                         }
@@ -515,15 +611,15 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
             }
 
             if (%(bias)s) {
-                scale_buffer_ptr = (float*)PyArray_DATA(%(scale)s);
-                shift_buffer_ptr = (float*)PyArray_DATA(%(shift)s);
+                scale_buffer_ptr = (%(t)s*)PyArray_DATA(%(scale)s);
+                shift_buffer_ptr = (%(t)s*)PyArray_DATA(%(shift)s);
 
                 // Read data from bias weight and bias term buffern to ScaleShift buffer
                 for (int i = 0; i < x_channels; i++) {
-                    ((float*)scaleShift_buffer)[i] = scale_buffer_ptr[i];
-                    ((float*)scaleShift_buffer)[x_channels + i] = 0;
+                    ((%(t)s*)scaleShift_buffer)[i] = scale_buffer_ptr[i];
+                    ((%(t)s*)scaleShift_buffer)[x_channels + i] = 0;
                     if (%(term)s) {
-                        ((float*)scaleShift_buffer)[x_channels + i] = shift_buffer_ptr[i];
+                        ((%(t)s*)scaleShift_buffer)[x_channels + i] = shift_buffer_ptr[i];
                     }
                 }
             }
