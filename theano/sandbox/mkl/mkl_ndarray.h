@@ -94,7 +94,7 @@ __attribute__((visibility ("default"))) PyObject* MKLNdarray_CreateArrayObj(MKLN
 
 __attribute__((visibility ("default"))) void* MKLNdarray_DATA(const MKLNdarray* self);
 __attribute__((visibility ("default"))) void* MKLNdarray_WORKSPACE(const MKLNdarray* self);
-__attribute__((visibility ("default"))) dnnLayout_t* MKLNdarray_LAYOUT(const MKLNdarray* self);
+__attribute__((visibility ("default"))) dnnLayout_t MKLNdarray_LAYOUT(const MKLNdarray* self);
 __attribute__((visibility ("default"))) const size_t* MKLNdarray_DIMS(const MKLNdarray* self);
 __attribute__((visibility ("default"))) const size_t* MKLNdarray_STRIDES(const MKLNdarray* self);
 __attribute__((visibility ("default"))) int MKLNdarray_NDIM(const MKLNdarray* self);

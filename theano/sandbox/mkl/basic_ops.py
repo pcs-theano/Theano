@@ -651,19 +651,7 @@ class U2ILRN(BaseConvertOp):
             for (int i = 0; i < ndim; i++) {
                 dims[i] = (size_t)d[i];
             }
-
-            Py_XDECREF(%(z)s);
-            %(z)s = (MKLNdarray*)MKLNdarray_New(ndim, dtype);
-
-            if (!%(z)s) {
-                %(fail)s;
-            }
-
-            int status = MKLNdarray_set_structure(%(z)s, ndim, dims);
-            if (status != 0) {
-                %(fail)s;
-            }
-            
+           
             if (1 == first_run) {
                 bottomSize[0] = d[3]; //w
                 bottomSize[1] = d[2]; //h
@@ -678,33 +666,48 @@ class U2ILRN(BaseConvertOp):
                 //create user layout
                 CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_user, DIMENSION, bottomSize, bottomStride), err );
                 CHECK_ERR( dnnLRNCreateForward_%(precision)s(&primitive, NULL, layout_user, %(size)s, %(alpha)s, %(beta)s, %(k)s), err );
-                
             }
-            CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&(%(z)s->private_layout),
-                                                                  primitive,
-                                                                  dnnResourceSrc), err );
 
-            if (!dnnLayoutCompare_%(precision)s(layout_user, %(z)s->private_layout)) {
-                if (NULL == to_internal) {
-                    CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_user, %(z)s->private_layout), err );
+            if (!( %(z)s
+                && MKLNdarray_Check((PyObject*)%(z)s)
+                && MKLNdarray_NDIM(%(z)s) == ndim
+                && MKLNdarray_DIMS(%(z)s)[0] == d[0]
+                && MKLNdarray_DIMS(%(z)s)[1] == d[1]
+                && MKLNdarray_DIMS(%(z)s)[2] == d[2]
+                && MKLNdarray_DIMS(%(z)s)[3] == d[3]) ) {
+            
+                if (%(z)s) Py_XDECREF(%(z)s);
+                %(z)s = (MKLNdarray*)MKLNdarray_New(ndim, dtype);
+                if (!%(z)s) {
+                    %(fail)s;
+                }
+
+                int status = MKLNdarray_set_structure(%(z)s, ndim, dims);
+                if (status != 0) {
+                    %(fail)s;
+                }
+
+                status = MKLNdarray_create_buffer(%(z)s, &primitive, dnnResourceSrc);
+                if (status != 0) {
+                    %(fail)s;
                 }
             }
 
-            CHECK_ERR(  dnnAllocateBuffer_%(precision)s((void**)&(%(z)s->private_data), %(z)s->private_layout), err );
-            %(z)s->data_size = dnnLayoutGetMemorySize_%(precision)s(%(z)s->private_layout);
+            if (!dnnLayoutCompare_%(precision)s(layout_user, MKLNdarray_LAYOUT(%(z)s))) {
+                if (NULL == to_internal) {
+                    CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_user, MKLNdarray_LAYOUT(%(z)s)), err );
+                }
+            }
+
             if (to_internal) {
                 CHECK_ERR( dnnConversionExecute_%(precision)s(to_internal,
                                                               PyArray_DATA(%(x)s),
-                                                              %(z)s->private_data), err );
+                                                              MKLNdarray_DATA(%(z)s)), err );
             } else {
-                memcpy(%(z)s->private_data, (void*)PyArray_DATA(%(x)s), %(z)s->data_size);
+                memcpy(MKLNdarray_DATA(%(z)s), (void*)PyArray_DATA(%(x)s), %(z)s->data_size);
             }
 
             first_run = 0;
-
-            #ifdef _MKL_DEBUG_
-                std::cout << "U2ILRN: from buffer: " << convert_resources[dnnResourceFrom] << " to buffer: " << convert_resources[dnnResourceTo] << std::endl;
-            #endif
         """ % locals()
         return ccode
 
@@ -933,18 +936,6 @@ class U2IElemwiseSum(BaseConvertOp):
                 dims[i] = (size_t)d[i];
             }
 
-            Py_XDECREF(%(z)s);
-            %(z)s = (MKLNdarray*)MKLNdarray_New(ndim, dtype);
-
-            if (!%(z)s) {
-                %(fail)s;
-            }
-
-            int status = MKLNdarray_set_structure(%(z)s, ndim, dims);
-            if (status != 0) {
-                %(fail)s;
-            }
-           
            if (1 == first_run) {
                 bottomSize[0] = d[3]; //w
                 bottomSize[1] = d[2]; //h
@@ -960,31 +951,47 @@ class U2IElemwiseSum(BaseConvertOp):
                 CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_user, DIMENSION, bottomSize, bottomStride), err );
                 CHECK_ERR( dnnSumCreate_%(precision)s(&primitive, NULL, %(inp_num)s, layout_user, coeffs), err);
             }
-            CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&(%(z)s->private_layout),
-                                                                  primitive,
-                                                                  dnnResourceMultipleSrc), err );
 
-            if (!dnnLayoutCompare_%(precision)s(layout_user, %(z)s->private_layout)) {
-                if (NULL == to_internal) {
-                    CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_user, %(z)s->private_layout), err );
+            if (!( %(z)s
+                && MKLNdarray_Check((PyObject*)%(z)s)
+                && MKLNdarray_NDIM(%(z)s) == ndim
+                && MKLNdarray_DIMS(%(z)s)[0] == d[0]
+                && MKLNdarray_DIMS(%(z)s)[1] == d[1]
+                && MKLNdarray_DIMS(%(z)s)[2] == d[2]
+                && MKLNdarray_DIMS(%(z)s)[3] == d[3]) ) {
+            
+                if (%(z)s) Py_XDECREF(%(z)s);
+                %(z)s = (MKLNdarray*)MKLNdarray_New(ndim, dtype);
+                if (!%(z)s) {
+                    %(fail)s;
+                }
+
+                int status = MKLNdarray_set_structure(%(z)s, ndim, dims);
+                if (status != 0) {
+                    %(fail)s;
+                }
+
+                status = MKLNdarray_create_buffer(%(z)s, &primitive, dnnResourceMultipleSrc);
+                if (status != 0) {
+                    %(fail)s;
                 }
             }
 
-            CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)(&(%(z)s->private_data)), %(z)s->private_layout), err );
-            %(z)s->data_size = dnnLayoutGetMemorySize_%(precision)s(%(z)s->private_layout);
+            if (!dnnLayoutCompare_%(precision)s(layout_user, MKLNdarray_LAYOUT(%(z)s))) {
+                if (NULL == to_internal) {
+                    CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_user, MKLNdarray_LAYOUT(%(z)s)), err );
+                }
+            }
 
             if (to_internal) {
                 CHECK_ERR( dnnConversionExecute_%(precision)s(to_internal,
                                                               PyArray_DATA(%(x)s),
-                                                              %(z)s->private_data), err );
+                                                              MKLNdarray_DATA(%(z)s)), err );
             } else {
-                memcpy(%(z)s->private_data, (void*)PyArray_DATA(%(x)s), %(z)s->data_size);
+                memcpy(MKLNdarray_DATA(%(z)s), (void*)PyArray_DATA(%(x)s), %(z)s->data_size);
             }
 
             first_run = 0;
-            #ifdef _MKL_DEBUG_
-                std::cout << "U2IElemwiseSum: from buffer: " << convert_resources[dnnResourceFrom] << " to buffer: " << convert_resources[dnnResourceTo] << std::endl;
-            #endif
         """ % locals()
         return ccode
 
@@ -1030,18 +1037,6 @@ class U2IBatchNormalization(BaseConvertOp):
                 dims[i] = (size_t)d[i];
             }
 
-            Py_XDECREF(%(z)s);
-            %(z)s = (MKLNdarray*)MKLNdarray_New(ndim, dtype);
-
-            if (!%(z)s) {
-                %(fail)s;
-            }
-
-            int status = MKLNdarray_set_structure(%(z)s, ndim, dims);
-            if (status != 0) {
-                %(fail)s;
-            }
-
             if (1 == first_run) {
                 bottomSize[0] = d[3]; //w
                 bottomSize[1] = d[2]; //h
@@ -1056,32 +1051,48 @@ class U2IBatchNormalization(BaseConvertOp):
                 //create user layout
                 CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_user, DIMENSION, bottomSize, bottomStride), err );
                 CHECK_ERR( dnnBatchNormalizationCreateForward_%(precision)s(&primitive, NULL, layout_user, %(eps)s), err);
-                
             }
 
-            CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&(%(z)s->private_layout),
-                                                                  primitive,
-                                                                  dnnResourceSrc), err );
-            if (!dnnLayoutCompare_%(precision)s(layout_user, %(z)s->private_layout)) {
-                if (NULL == to_internal) {
-                    CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_user, %(z)s->private_layout), err );
+            if (!( %(z)s
+                && MKLNdarray_Check((PyObject*)%(z)s)
+                && MKLNdarray_NDIM(%(z)s) == ndim
+                && MKLNdarray_DIMS(%(z)s)[0] == d[0]
+                && MKLNdarray_DIMS(%(z)s)[1] == d[1]
+                && MKLNdarray_DIMS(%(z)s)[2] == d[2]
+                && MKLNdarray_DIMS(%(z)s)[3] == d[3]) ) {
+            
+                if (%(z)s) Py_XDECREF(%(z)s);
+                %(z)s = (MKLNdarray*)MKLNdarray_New(ndim, dtype);
+                if (!%(z)s) {
+                    %(fail)s;
+                }
+
+                int status = MKLNdarray_set_structure(%(z)s, ndim, dims);
+                if (status != 0) {
+                    %(fail)s;
+                }
+
+                status = MKLNdarray_create_buffer(%(z)s, &primitive, dnnResourceSrc);
+                if (status != 0) {
+                    %(fail)s;
                 }
             }
 
-            CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)(&(%(z)s->private_data)), %(z)s->private_layout), err );
-            %(z)s->data_size = dnnLayoutGetMemorySize_%(precision)s(%(z)s->private_layout);
+            if (!dnnLayoutCompare_%(precision)s(layout_user, MKLNdarray_LAYOUT(%(z)s))) {
+                if (NULL == to_internal) {
+                    CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_user, MKLNdarray_LAYOUT(%(z)s)), err );
+                }
+            }
+
             if (to_internal) {
                 CHECK_ERR( dnnConversionExecute_%(precision)s(to_internal,
                                                               PyArray_DATA(%(x)s),
-                                                              %(z)s->private_data), err );
+                                                              MKLNdarray_DATA(%(z)s)), err );
             } else {
-                memcpy(%(z)s->private_data, (void*)PyArray_DATA(%(x)s), %(z)s->data_size);
+                memcpy(MKLNdarray_DATA(%(z)s), (void*)PyArray_DATA(%(x)s), %(z)s->data_size);
             }
             
             first_run = 0;
-            #ifdef _MKL_DEBUG_
-                std::cout << "U2IBatchNormalization: from buffer: " << convert_resources[dnnResourceFrom] << " to buffer: " << convert_resources[dnnResourceTo] << std::endl;
-            #endif
         """ % locals()
         return ccode
 

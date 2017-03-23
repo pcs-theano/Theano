@@ -134,18 +134,18 @@ class U2I_BN(BaseConvertOp):
         CHECK_ERR( dnnBatchNormalizationCreateForward_%(precision)s(&primitive, NULL, layout_user, %(eps)s), err);
         int ret = MKLNdarray_create_buffer(%(z)s, &primitive, dnnResourceSrc);
         std::cout<<"ret:"<<ret<<std::endl; 
-        if (!dnnLayoutCompare_%(precision)s(layout_user, %(z)s->private_layout)) {
+        if (!dnnLayoutCompare_%(precision)s(layout_user, MKLNdarray_LAYOUT(%(z)s))) {
             if (NULL == to_internal) {
-                CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_user, %(z)s->private_layout), err);
+                CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_user, MKLNdarray_LAYOUT(%(z)s)), err);
             }
         }
 
         if (to_internal) {
             printf("bn convert\\n");
-            CHECK_ERR( dnnConversionExecute_%(precision)s(to_internal, PyArray_DATA(%(x)s), %(z)s->private_data), err);
+            CHECK_ERR( dnnConversionExecute_%(precision)s(to_internal, PyArray_DATA(%(x)s), MKLNdarray_DATA(%(z)s)), err);
         } else {
             printf("bn no convert \\n");
-            memcpy(%(z)s->private_data, PyArray_DATA(%(x)s), dnnLayoutGetMemorySize_%(precision)s(%(z)s->private_layout));
+            memcpy(%(z)s->private_data, PyArray_DATA(%(x)s), %(z)s->data_size);
         }
 
         // printf("BN CONVERT OK \\n");

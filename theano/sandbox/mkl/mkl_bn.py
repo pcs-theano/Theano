@@ -5,14 +5,12 @@ from theano.gradient import DisconnectedType
 from theano.sandbox.mkl import mkl_type
 
 class AbstractBatchNormalization(basic_ops.MKLOp):
-    __props__ = ('eps', 'bias', 'term', 'inplace', 'train_stage')
+    __props__ = ('eps', 'bias', 'term')
 
-    def __init__(self, eps=1e-5, bias=1, term=1, inplace=1, train_stage=1):
+    def __init__(self, eps=1e-5, bias=1, term=1):
         self.eps = eps
         self.bias = bias
         self.term = term
-        self.inplace = inplace
-        self.train_stage = train_stage
 
     def make_node(self, x, scale, shift, mean, std):
         x = tensor.as_tensor_variable(x)
@@ -31,9 +29,7 @@ class AbstractBatchNormalization(basic_ops.MKLOp):
         disc = [DisconnectedType()() for i in inp[3:]]
         AbstractBN = AbstractBatchNormalizationGrad(eps=self.eps,
                                                     bias=self.bias,
-                                                    term=self.term,
-                                                    inplace=self.inplace,
-                                                    train_stage=self.train_stage)
+                                                    term=self.term)
         [gx, g_scale, g_shift] = AbstractBN(x, gz, scale, shift)
         return [gx, g_scale, g_shift] + disc
 
@@ -46,14 +42,12 @@ class AbstractBatchNormalization(basic_ops.MKLOp):
 
 
 class AbstractBatchNormalizationGrad(basic_ops.MKLOp):
-    __props__ = ('eps', 'bias', 'term', 'inplace', 'train_stage')
+    __props__ = ('eps', 'bias', 'term')
 
-    def __init__(self, eps=1e-5, bias=1, term=1, inplace=1, train_stage=1):
+    def __init__(self, eps=1e-5, bias=1, term=1):
         self.eps = eps
         self.bias = bias
         self.term = term
-        self.inplace = inplace
-        self.train_stage = train_stage
 
     def make_node(self, x, gz, scale, shift):
         assert isinstance(x, Variable) and x.ndim == 4
@@ -68,15 +62,13 @@ class AbstractBatchNormalizationGrad(basic_ops.MKLOp):
 
 
 class BatchNormalization(basic_ops.MKLOp):
-    __props__ = ('eps', 'bias', 'term', 'inplace', 'train_stage')
+    __props__ = ('eps', 'bias', 'term')
 
-    def __init__(self, eps=1e-5, bias=1, term=1, inplace=1, train_stage=1):
+    def __init__(self, eps=1e-5, bias=1, term=1):
         super(BatchNormalization, self).__init__()
         self.eps = eps
         self.bias = bias
         self.term = term
-        self.inplace = inplace
-        self.train_stage = train_stage
 
     def make_node(self, x, scale, shift):
         if not isinstance(x.type, mkl_type.MKLNdarrayType):
@@ -183,8 +175,6 @@ class BatchNormalization(basic_ops.MKLOp):
         eps = self.eps
         bias = self.bias
         term = self.term
-        inplace = self.inplace
-        train_stage = self.train_stage
 
         dtype = node.inputs[0].type.dtype
         assert dtype in ('float32', 'float64')
@@ -226,7 +216,7 @@ class BatchNormalization(basic_ops.MKLOp):
 
             if(first_run) {
                 // create bn fwd primitive
-                CHECK_ERR( dnnBatchNormalizationCreateForward_%(precision)s(&bnFwd, NULL, *MKLNdarray_LAYOUT(%(x)s), %(eps)s), err);
+                CHECK_ERR( dnnBatchNormalizationCreateForward_%(precision)s(&bnFwd, NULL, MKLNdarray_LAYOUT(%(x)s), %(eps)s), err);
 
                 // create internal layout for input x
                 CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_x_internal, bnFwd, dnnResourceSrc), err);
@@ -258,18 +248,22 @@ class BatchNormalization(basic_ops.MKLOp):
                 }
             }
 
-            if ((! %(z)s) ||
-                (MKLNdarray_DIMS(%(z)s)[0] != MKLNdarray_DIMS(%(x)s)[0]) ||
-                (MKLNdarray_DIMS(%(z)s)[1] != MKLNdarray_DIMS(%(x)s)[1])) {
+            if (! (%(z)s
+                && MKLNdarray_Check((PyObject*)%(z)s)
+                && MKLNdarray_NDIM(%(z)s) == MKLNdarray_NDIM(%(x)s)
+                && MKLNdarray_DIMS(%(z)s)[0] == MKLNdarray_DIMS(%(x)s)[0]
+                && MKLNdarray_DIMS(%(z)s)[1] == MKLNdarray_DIMS(%(x)s)[1]
+                && MKLNdarray_DIMS(%(z)s)[2] == MKLNdarray_DIMS(%(x)s)[2]
+                && MKLNdarray_DIMS(%(z)s)[3] == MKLNdarray_DIMS(%(x)s)[3] )) {
 
                 if (%(z)s) Py_XDECREF(%(z)s);
 
-                %(z)s = (MKLNdarray*)MKLNdarray_New(DIMENSION, typenum);
+                %(z)s = (MKLNdarray*)MKLNdarray_New(MKLNdarray_NDIM(%(x)s), typenum);
                 if (! %(z)s) {
                     %(fail)s;
                 }
 
-                int status = MKLNdarray_set_structure(%(z)s, DIMENSION, MKLNdarray_DIMS(%(x)s));
+                int status = MKLNdarray_set_structure(%(z)s, MKLNdarray_NDIM(%(x)s), MKLNdarray_DIMS(%(x)s));
                 if (status != 0) {
                     %(fail)s;
                 }
@@ -283,9 +277,9 @@ class BatchNormalization(basic_ops.MKLOp):
             }  // else reuse %(z)s
 
             // compare input layout and internal layout, do internal to internal conversion
-            if (! dnnLayoutCompare_%(precision)s(layout_x_internal, *MKLNdarray_LAYOUT(%(x)s))) {
+            if (! dnnLayoutCompare_%(precision)s(layout_x_internal, MKLNdarray_LAYOUT(%(x)s))) {
                 if (NULL == prim_to_internal) {
-                    CHECK_ERR( dnnConversionCreate_%(precision)s(&prim_to_internal, *MKLNdarray_LAYOUT(%(x)s), layout_x_internal), err);
+                    CHECK_ERR( dnnConversionCreate_%(precision)s(&prim_to_internal, MKLNdarray_LAYOUT(%(x)s), layout_x_internal), err);
                 }
                 if (NULL != x_internal_buffer) {
                     CHECK_ERR( dnnAllocateBuffer_%(precision)s(&x_internal_buffer, layout_x_internal), err);
@@ -523,7 +517,7 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
             
             if (first_run) {
                 // create bn bwd primitive
-                CHECK_ERR( dnnBatchNormalizationCreateBackwardData_%(precision)s(&bnBwd, NULL, *MKLNdarray_LAYOUT(%(x)s), %(eps)s), err);
+                CHECK_ERR( dnnBatchNormalizationCreateBackwardData_%(precision)s(&bnBwd, NULL, MKLNdarray_LAYOUT(%(x)s), %(eps)s), err);
 
                 // layout for internal gz layout
                 CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_gz_internal, bnBwd, dnnResourceDiffDst), err);
@@ -551,7 +545,7 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
                 if (%(bias)s) {
                     CHECK_ERR( dnnBatchNormalizationCreateBackwardScaleShift_%(precision)s(&bnBwdScaleShift,
                                                                                            NULL,
-                                                                                           *(MKLNdarray_LAYOUT(%(x)s)),
+                                                                                           MKLNdarray_LAYOUT(%(x)s),
                                                                                            %(eps)s), err);
                     CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_x_internal_gs, bnBwdScaleShift, dnnResourceSrc), err);
                     CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_gz_internal_gs, bnBwdScaleShift, dnnResourceDiffDst), err);
@@ -577,16 +571,15 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
                         CHECK_ERR( dnnAllocateBuffer_%(precision)s(&gs_internal_buffer_gs, layout_gs_internal_gs), err);
                     }
                 }
-
-                if (NULL == MKLNdarray_DATA(%(z)s)) {
-                    CHECK_ERR( dnnAllocateBuffer_%(precision)s(&(%(z)s->private_data), *MKLNdarray_LAYOUT(%(z)s)), err);
-                    %(z)s->data_size = dnnLayoutGetMemorySize_%(precision)s(*MKLNdarray_LAYOUT(%(z)s));
-                }
             }
 
-            if ((!%(z)s)
-                ||(MKLNdarray_DIMS(%(z)s)[0] != MKLNdarray_DIMS(%(x)s)[0])
-                ||(MKLNdarray_DIMS(%(z)s)[1] != MKLNdarray_DIMS(%(x)s)[1])) {
+            if (! (%(z)s
+                && MKLNdarray_Check((PyObject*)%(z)s)
+                && MKLNdarray_NDIM(%(z)s) == MKLNdarray_NDIM(%(x)s)
+                && MKLNdarray_DIMS(%(z)s)[0] == MKLNdarray_DIMS(%(x)s)[0]
+                && MKLNdarray_DIMS(%(z)s)[1] == MKLNdarray_DIMS(%(x)s)[1]
+                && MKLNdarray_DIMS(%(z)s)[2] == MKLNdarray_DIMS(%(x)s)[2]
+                && MKLNdarray_DIMS(%(z)s)[3] == MKLNdarray_DIMS(%(x)s)[3] )) {
 
                 if (%(z)s) Py_XDECREF(%(z)s);
                 %(z)s = (MKLNdarray*)MKLNdarray_New(DIMENSION, typenum);
@@ -621,9 +614,9 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
             }
 
             // compare gz layout with internal layout, do internal to internal conversion
-            if (! dnnLayoutCompare_%(precision)s(layout_gz_internal, *MKLNdarray_LAYOUT(%(gz)s))) {
+            if (! dnnLayoutCompare_%(precision)s(layout_gz_internal, MKLNdarray_LAYOUT(%(gz)s))) {
                 if (NULL != prim_to_internal_gz) {
-                    CHECK_ERR( dnnConversionCreate_%(precision)s(&prim_to_internal_gz, *MKLNdarray_LAYOUT(&(gz)s), layout_gz_internal), err);
+                    CHECK_ERR( dnnConversionCreate_%(precision)s(&prim_to_internal_gz, MKLNdarray_LAYOUT(&(gz)s), layout_gz_internal), err);
                 }
 
                 if (NULL != gz_internal_buffer) {
@@ -646,10 +639,10 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
 
             if (%(bias)s) {
                 // compare gz layout with internal layout, do internal to internal conversion
-                if (! dnnLayoutCompare_%(precision)s(layout_gz_internal_gs, *MKLNdarray_LAYOUT(%(gz)s))) {
+                if (! dnnLayoutCompare_%(precision)s(layout_gz_internal_gs, MKLNdarray_LAYOUT(%(gz)s))) {
                     if (NULL != prim_to_internal_gz_gs) {
                         CHECK_ERR( dnnConversionCreate_%(precision)s(&prim_to_internal_gz_gs,
-                                                                     *MKLNdarray_LAYOUT(&(gz)s),
+                                                                     MKLNdarray_LAYOUT(&(gz)s),
                                                                      layout_gz_internal_gs), err);
                     }
 
@@ -668,10 +661,10 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
                 }
 
                 //compare x input laout with internal layout, do internal to internal conversion
-                if (! dnnLayoutCompare_%(precision)s(layout_x_internal_gs, *MKLNdarray_LAYOUT(%(x)s))) {
+                if (! dnnLayoutCompare_%(precision)s(layout_x_internal_gs, MKLNdarray_LAYOUT(%(x)s))) {
                     if (NULL != prim_to_internal_x_gs) {
                         CHECK_ERR( dnnConversionCreate_%(precision)s(&prim_to_internal_x_gs,
-                                                                     *MKLNdarray_LAYOUT(&(x)s),
+                                                                     MKLNdarray_LAYOUT(&(x)s),
                                                                      layout_x_internal_gs), err);
                     }
 

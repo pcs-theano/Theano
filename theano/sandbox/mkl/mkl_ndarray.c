@@ -290,9 +290,9 @@ MKLNdarray_WORKSPACE(const MKLNdarray *self) {
  * An dnnLayout_t* pointer is returned.
  *
  */
-dnnLayout_t*
+dnnLayout_t
 MKLNdarray_LAYOUT(const MKLNdarray *self) {
-    return (dnnLayout_t*)(&(self->private_layout));
+    return self->private_layout;
 }
 
 
