@@ -132,7 +132,7 @@ class U2I_BN(BaseConvertOp):
 
         CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_user, DIMENSION, bottomSize, bottomStride), err);
         CHECK_ERR( dnnBatchNormalizationCreateForward_%(precision)s(&primitive, NULL, layout_user, %(eps)s), err);
-        int ret = MKLNdarray_create_layout_buffer(%(z)s, &primitive, dnnResourceSrc);
+        int ret = MKLNdarray_create_buffer(%(z)s, &primitive, dnnResourceSrc);
         std::cout<<"ret:"<<ret<<std::endl; 
         if (!dnnLayoutCompare_%(precision)s(layout_user, %(z)s->private_layout)) {
             if (NULL == to_internal) {

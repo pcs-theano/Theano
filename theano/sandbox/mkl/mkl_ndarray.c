@@ -300,11 +300,11 @@ MKLNdarray_LAYOUT(const MKLNdarray *self) {
 /*
  * Create private layout and buffer for a MKLNdarray.
  *
- * If res_num is dnnResourceWorkspace, private_workspace will be allocated for MKLNdarray.
+ * If res_type is dnnResourceWorkspace, private_workspace will be allocated for MKLNdarray.
  *
- * Still need further check for res_num. It should among  Src, Dst, DiffSrc, Workspace, DiffFilter,...
+ * Still need further check for res_type. It should among  Src, Dst, DiffSrc, Workspace, DiffFilter,...
  */
-int MKLNdarray_create_layout_buffer(MKLNdarray *self, const dnnPrimitive_t *prim, dnnResourceType_t res_num) {
+int MKLNdarray_create_buffer(MKLNdarray *self, const dnnPrimitive_t *prim, dnnResourceType_t res_type) {
     if (self->nd < 0 || self->dtype < 0) {
         PyErr_SetString(PyExc_RuntimeError,
                         "MKLNdarray_create_layout_buffer: Can't create layout and buffer for a uninitialized MKLNdarray");
@@ -319,7 +319,7 @@ int MKLNdarray_create_layout_buffer(MKLNdarray *self, const dnnPrimitive_t *prim
     
     int status = 0;
     if (self->dtype == MKL_FLOAT64) {  // for float64
-        if (res_num == dnnResourceWorkspace) {
+        if (res_type == dnnResourceWorkspace) {
             dnnLayout_t layout_workspace = NULL;
             if (self->private_workspace != NULL) {
                 PyErr_SetString(PyExc_RuntimeError,
@@ -327,7 +327,7 @@ int MKLNdarray_create_layout_buffer(MKLNdarray *self, const dnnPrimitive_t *prim
                 return -1;
             }
 
-            status = dnnLayoutCreateFromPrimitive_F64(&layout_workspace, *prim, res_num);
+            status = dnnLayoutCreateFromPrimitive_F64(&layout_workspace, *prim, res_type);
             if (E_SUCCESS != status || NULL == layout_workspace) {
                 PyErr_Format(PyExc_RuntimeError,
                              "MKLNdarray_create_layout_buffer: Create layout for workspace failed: %d, line: %d",
@@ -354,7 +354,7 @@ int MKLNdarray_create_layout_buffer(MKLNdarray *self, const dnnPrimitive_t *prim
                 return -1;
             }
 
-            status = dnnLayoutCreateFromPrimitive_F64(&(self->private_layout), *prim, res_num);
+            status = dnnLayoutCreateFromPrimitive_F64(&(self->private_layout), *prim, res_type);
             if (E_SUCCESS != status || NULL == self->private_layout) {
                 PyErr_Format(PyExc_RuntimeError,
                              "MKLNdarray_create_layout_buffer: Create private layout failed: %d, line: %d",
@@ -369,9 +369,10 @@ int MKLNdarray_create_layout_buffer(MKLNdarray *self, const dnnPrimitive_t *prim
                              status, __LINE__);
                 return -1;
             }
+            self->data_size = dnnLayoutGetMemorySize_F64(self->private_layout);
         }
     } else {  // for float32
-        if (res_num == dnnResourceWorkspace) {
+        if (res_type == dnnResourceWorkspace) {
             dnnLayout_t layout_workspace = NULL;
             if (self->private_workspace != NULL) {
                 PyErr_SetString(PyExc_RuntimeError,
@@ -379,7 +380,7 @@ int MKLNdarray_create_layout_buffer(MKLNdarray *self, const dnnPrimitive_t *prim
                 return -1;
             }
 
-            status = dnnLayoutCreateFromPrimitive_F32(&layout_workspace, *prim, res_num);
+            status = dnnLayoutCreateFromPrimitive_F32(&layout_workspace, *prim, res_type);
             if (E_SUCCESS != status || NULL == layout_workspace) {
                 PyErr_Format(PyExc_RuntimeError,
                              "MKLNdarray_create_layout_buffer: Create layout for workspace failed: %d, line: %d",
@@ -406,7 +407,7 @@ int MKLNdarray_create_layout_buffer(MKLNdarray *self, const dnnPrimitive_t *prim
                 return -1;
             }
 
-            status = dnnLayoutCreateFromPrimitive_F32(&(self->private_layout), *prim, res_num);
+            status = dnnLayoutCreateFromPrimitive_F32(&(self->private_layout), *prim, res_type);
             if (E_SUCCESS != status || NULL == self->private_layout) {
                 PyErr_Format(PyExc_RuntimeError,
                              "MKLNdarray_create_layout_buffer: Create private layout failed: %d, line: %d",
@@ -421,6 +422,7 @@ int MKLNdarray_create_layout_buffer(MKLNdarray *self, const dnnPrimitive_t *prim
                              status, __LINE__);
                 return -1;
             }
+            self->data_size = dnnLayoutGetMemorySize_F32(self->private_layout);
         }
     }
     return 0;

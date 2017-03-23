@@ -102,7 +102,6 @@ class BatchNormalization(basic_ops.MKLOp):
 
     def c_support_code_struct(self, node, name):
         support_code = """
-            dnnLayout_t layout_workspace;
             dnnLayout_t layout_x_internal;
             dnnLayout_t layout_scaleshift;
             
@@ -126,7 +125,6 @@ class BatchNormalization(basic_ops.MKLOp):
 
     def c_init_code_struct(self, node, name, sub):
         init_code = """
-            layout_workspace = NULL;
             layout_x_internal = NULL;
             layout_scaleshift = NULL;
 
@@ -151,10 +149,6 @@ class BatchNormalization(basic_ops.MKLOp):
 
         return """
         // release layout
-        if (NULL != layout_workspace) {
-            dnnLayoutDelete_%(precision)s(layout_workspace);
-            layout_workspace = NULL;
-        }
         if (NULL != layout_x_internal) {
             dnnLayoutDelete_%(precision)s(layout_x_internal);
             layout_x_internal = NULL;
@@ -208,7 +202,7 @@ class BatchNormalization(basic_ops.MKLOp):
         {
             %(t)s* scale_buffer_ptr = NULL;
             %(t)s* shift_buffer_ptr = NULL;
-
+            int ret = 0;
             if (first_run) {
                 typenum    = MKLNdarray_TYPE((MKLNdarray*)%(x)s);
                 x_bs       = MKLNdarray_DIMS(%(x)s)[0];
@@ -230,39 +224,19 @@ class BatchNormalization(basic_ops.MKLOp):
                 shift_buffer_ptr = (%(t)s*)PyArray_DATA(%(shift)s);
             }
 
-            if ((! %(z)s) ||
-                (MKLNdarray_DIMS(%(z)s)[0] != MKLNdarray_DIMS(%(x)s)[0]) ||
-                (MKLNdarray_DIMS(%(z)s)[1] != MKLNdarray_DIMS(%(x)s)[1])) {
-
-                if (%(z)s) Py_XDECREF(%(z)s);
-
-                %(z)s = (MKLNdarray*)MKLNdarray_New(DIMENSION, typenum);
-                if (! %(z)s) {
-                    %(fail)s;
-                }
-
-                int status = MKLNdarray_set_structure(%(z)s, DIMENSION, MKLNdarray_DIMS(%(x)s));
-                if (status != 0) {
-                    %(fail)s;
-                }
-
-            }
-
             if(first_run) {
                 // create bn fwd primitive
                 CHECK_ERR( dnnBatchNormalizationCreateForward_%(precision)s(&bnFwd, NULL, *MKLNdarray_LAYOUT(%(x)s), %(eps)s), err);
 
-                // create fwd output internal layout
-                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(MKLNdarray_LAYOUT(%(z)s), bnFwd, dnnResourceDst), err);
-
                 // create internal layout for input x
                 CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_x_internal, bnFwd, dnnResourceSrc), err);
-
-                // layout for workspace
-                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_workspace, bnFwd, dnnResourceWorkspace), err);
-
-                // buffer for workspace, in x
-                CHECK_ERR( dnnAllocateBuffer_%(precision)s(&(%(x)s->private_workspace), layout_workspace), err);
+                
+                // create workspace buffer in x
+                ret = MKLNdarray_create_buffer(%(x)s, &bnFwd, dnnResourceWorkspace);
+                if (0 != ret) {
+                    std::cout<<"MKLNdarray_create_buffer return: "<<ret<<", line: "<<__LINE__<<std::endl;
+                    exit(1);
+                }
 
                 // layout for scaleshift
                 CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_scaleshift, bnFwd, dnnResourceScaleShift), err);
@@ -284,6 +258,30 @@ class BatchNormalization(basic_ops.MKLOp):
                 }
             }
 
+            if ((! %(z)s) ||
+                (MKLNdarray_DIMS(%(z)s)[0] != MKLNdarray_DIMS(%(x)s)[0]) ||
+                (MKLNdarray_DIMS(%(z)s)[1] != MKLNdarray_DIMS(%(x)s)[1])) {
+
+                if (%(z)s) Py_XDECREF(%(z)s);
+
+                %(z)s = (MKLNdarray*)MKLNdarray_New(DIMENSION, typenum);
+                if (! %(z)s) {
+                    %(fail)s;
+                }
+
+                int status = MKLNdarray_set_structure(%(z)s, DIMENSION, MKLNdarray_DIMS(%(x)s));
+                if (status != 0) {
+                    %(fail)s;
+                }
+
+                // create dst layout and buffer in z
+                ret = MKLNdarray_create_buffer(%(z)s, &bnFwd, dnnResourceDst);
+                if (0 != ret) {
+                    std::cout<<"MKLNdarray_createt_buffer return: "<<ret<<", line: "<<__LINE__<<std::endl;
+                    exit(1);
+                } 
+            }  // else reuse %(z)s
+
             // compare input layout and internal layout, do internal to internal conversion
             if (! dnnLayoutCompare_%(precision)s(layout_x_internal, *MKLNdarray_LAYOUT(%(x)s))) {
                 if (NULL == prim_to_internal) {
@@ -299,12 +297,6 @@ class BatchNormalization(basic_ops.MKLOp):
                 bn_res[dnnResourceSrc] = x_internal_buffer;
             } else {
                 bn_res[dnnResourceSrc] = MKLNdarray_DATA(%(x)s);
-            }
-
-            // allocate data buffer for output
-            if ((NULL == MKLNdarray_DATA(%(z)s)) || (first_run)) {
-                CHECK_ERR( dnnAllocateBuffer_%(precision)s(&(%(z)s->private_data), *MKLNdarray_LAYOUT(%(z)s)), err);
-                %(z)s->data_size = dnnLayoutGetMemorySize_%(precision)s(*MKLNdarray_LAYOUT(%(z)s));
             }
 
             if (%(bias)s) {
@@ -528,31 +520,13 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
                 strides[3] = strides[2] * sizes[2];
             }
 
-            if ((!%(z)s)
-              ||(MKLNdarray_DIMS(%(z)s)[0] != MKLNdarray_DIMS(%(x)s)[0])
-              ||(MKLNdarray_DIMS(%(z)s)[1] != MKLNdarray_DIMS(%(x)s)[1])) {
-
-                if (%(z)s) Py_XDECREF(%(z)s);
-                %(z)s = (MKLNdarray*)MKLNdarray_New(DIMENSION, typenum);
-                if (! %(z)s) {
-                    %(fail)s;
-                }
-
-                int status = MKLNdarray_set_structure(%(z)s, DIMENSION, MKLNdarray_DIMS(%(x)s));
-                if (status != 0) {
-                    %(fail)s;
-                }
-            }
-
+            
             if (first_run) {
                 // create bn bwd primitive
                 CHECK_ERR( dnnBatchNormalizationCreateBackwardData_%(precision)s(&bnBwd, NULL, *MKLNdarray_LAYOUT(%(x)s), %(eps)s), err);
 
                 // layout for internal gz layout
                 CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_gz_internal, bnBwd, dnnResourceDiffDst), err);
-
-                // layout for output
-                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(MKLNdarray_LAYOUT(%(z)s), bnBwd, dnnResourceDiffSrc), err);
 
                 // layout for scaleshift
                 CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_scaleshift, bnBwd, dnnResourceScaleShift), err);
@@ -610,6 +584,28 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
                 }
             }
 
+            if ((!%(z)s)
+                ||(MKLNdarray_DIMS(%(z)s)[0] != MKLNdarray_DIMS(%(x)s)[0])
+                ||(MKLNdarray_DIMS(%(z)s)[1] != MKLNdarray_DIMS(%(x)s)[1])) {
+
+                if (%(z)s) Py_XDECREF(%(z)s);
+                %(z)s = (MKLNdarray*)MKLNdarray_New(DIMENSION, typenum);
+                if (! %(z)s) {
+                    %(fail)s;
+                }
+
+                int status = MKLNdarray_set_structure(%(z)s, DIMENSION, MKLNdarray_DIMS(%(x)s));
+                if (0 != status) {
+                    %(fail)s;
+                }
+
+                status = MKLNdarray_create_buffer(%(z)s, &bnBwd, dnnResourceDiffSrc);
+                if (0 != status) {
+                    std::cout<<"MKLNdarray_create_buffer failed: "<<status<<", line: "<<__LINE__<<std::endl;
+                    exit(1);
+                }
+            }
+
             if (%(bias)s) {
                 scale_buffer_ptr = (%(t)s*)PyArray_DATA(%(scale)s);
                 shift_buffer_ptr = (%(t)s*)PyArray_DATA(%(shift)s);
@@ -629,6 +625,7 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
                 if (NULL != prim_to_internal_gz) {
                     CHECK_ERR( dnnConversionCreate_%(precision)s(&prim_to_internal_gz, *MKLNdarray_LAYOUT(&(gz)s), layout_gz_internal), err);
                 }
+
                 if (NULL != gz_internal_buffer) {
                     CHECK_ERR( dnnAllocateBuffer_%(precision)s(&gz_internal_buffer, layout_gz_internal), err);
                 }
