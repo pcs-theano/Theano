@@ -1,14 +1,9 @@
 from __future__ import absolute_import, print_function, division
 import os
-import six.moves.copyreg as copyreg
-import warnings
-
 import numpy
-
 import theano
 from theano import Type, Variable
-from theano import tensor, config
-from theano import scalar as scal
+from theano import tensor
 from six import StringIO
 
 try:
@@ -43,7 +38,7 @@ class MKLNdarrayType(Type):
     broadcastable = None
 
     def __init__(self, broadcastable, name=None, dtype=None):
-        if not dtype in ('float32', 'float64'):
+        if dtype not in ('float32', 'float64'):
             raise TypeError('%s only supports dtype float32/float64 for now. \
                             Tried sing dtype float32 for variable %s' % (self.__class__.__name__, name))
         self.dtype = dtype
@@ -77,7 +72,7 @@ class MKLNdarrayType(Type):
         raise NotImplementedError('MKLNdarray values_eq')
 
     def dtype_specs(self):
-	"""
+        """
         Return a tuple (python type, c type, numpy typenum) that corresponds
         to self.dtype.
 
@@ -120,7 +115,7 @@ class MKLNdarrayType(Type):
         """
         return hash(type(self)) ^ hash(self.broadcastable)
 
-    ndim  = property(lambda self: len(self.broadcastable), doc='number of dimensions')
+    ndim = property(lambda self: len(self.broadcastable), doc='number of dimensions')
 
     def make_variable(self, name=None):
         """
@@ -181,12 +176,11 @@ class MKLNdarrayType(Type):
 
         if (MKLNdarray_Check(py_%(name)s))
         {
-            printf("MKLNdarrayType: c_extract \\n");
             %(name)s = (MKLNdarray*)py_%(name)s;
             assert (%(name)s);
             Py_INCREF(py_%(name)s);
         }
-        """ %locals(), file=sio)
+        """ % locals(), file=sio)
 
         return sio.getvalue()
 
@@ -195,7 +189,6 @@ class MKLNdarrayType(Type):
         Add cleanup code here.
         """
         return """
-        printf("MKLNdarrayType: c_cleanup\\n");
         if (%(name)s)
         {
             Py_XDECREF(%(name)s);
@@ -209,7 +202,6 @@ class MKLNdarrayType(Type):
         only be called for the outputs.
         """
         return """
-        printf("MKLNdarrayType: c_sync\\n");
         if (NULL == %(name)s) {
             // failure: sync None to storage
             Py_XDECREF(py_%(name)s);
@@ -265,7 +257,6 @@ class MKLNdarrayType(Type):
             return numpy.dtype(self.dtype).itemsize
 
 
-
 theano.compile.ops.expandable_types += (MKLNdarrayType,)
 
 # Register C code for ViewOp on CudaNdarrayType
@@ -277,4 +268,3 @@ theano.compile.register_view_op_c_code(
     Py_XINCREF(%(oname)s);
     """,
     version=1)
-

@@ -61,12 +61,10 @@ typedef enum __PRIMITIVE_KINDS__{
 
 
 /**
- * struct : wrapper for MKL internal data and layout
- *
+ * struct: wrapper for MKL internal data and layout
  * This is a Python type.
- *
- * A fixed length 2*MAX_NDIM is specified to user_structure. So MKLNdarray can describe an array whose ndim is <=16 (MAX_NDIM).
- *
+ * A fixed length 2*MAX_NDIM is specified to user_structure.
+ * So MKLNdarray can describe an array whose ndim is <=16 (MAX_NDIM).
  * To avoid calling malloc and free for many times.
  *
  */

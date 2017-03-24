@@ -1,9 +1,11 @@
 from __future__ import absolute_import, print_function, division
 import os
+import errno
 import sys
 import logging
 import textwrap
 import stat
+import shutil
 import theano
 from theano import config, gof
 from six import integer_types
@@ -40,6 +42,7 @@ mkl_path = os.path.abspath(os.path.split(__file__)[0])
 mkl_ndarray_loc = os.path.join(config.compiledir, 'mkl_ndarray')
 mkl_ndarray_so = os.path.join(mkl_ndarray_loc, 'mkl_ndarray.' + get_lib_extension())
 libmkl_ndarray_so = os.path.join(mkl_ndarray_loc, 'libmkl_ndarray.' + get_lib_extension())
+
 
 def try_import_mkl_ndarray():
     mkl_files = ('mkl_ndarray.c', 'mkl_ndarray.h')

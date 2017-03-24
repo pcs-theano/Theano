@@ -1,8 +1,9 @@
 from theano import gof, tensor, Variable
 from theano.tensor import as_tensor_variable
-from theano.sandbox.mkl import basic_ops, mkl_helper
+from theano.sandbox.mkl import basic_ops
 from theano.gradient import DisconnectedType
 from theano.sandbox.mkl import mkl_type
+
 
 class AbstractBatchNormalization(basic_ops.MKLOp):
     __props__ = ('eps', 'bias', 'term')
@@ -96,7 +97,6 @@ class BatchNormalization(basic_ops.MKLOp):
         support_code = """
             dnnLayout_t layout_x_internal;
             dnnLayout_t layout_scaleshift;
-            
             void *scaleShift_buffer;
             dnnPrimitive_t bnFwd;
             dnnPrimitive_t prim_to_internal;
@@ -122,7 +122,7 @@ class BatchNormalization(basic_ops.MKLOp):
 
             scaleShift_buffer = NULL;
             bnFwd = NULL;
-            prim_to_internal = NULL;    
+            prim_to_internal = NULL;
             x_internal_buffer = NULL;
 
             first_run = 1;
@@ -185,7 +185,7 @@ class BatchNormalization(basic_ops.MKLOp):
         else:
             precision = 'F64'
             t = 'double'
-        
+
         fail = sub['fail']
 
         ret = """
@@ -220,7 +220,7 @@ class BatchNormalization(basic_ops.MKLOp):
 
                 // create internal layout for input x
                 CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_x_internal, bnFwd, dnnResourceSrc), err);
-                
+
                 // create workspace buffer in x
                 ret = MKLNdarray_create_buffer(%(x)s, &bnFwd, dnnResourceWorkspace);
                 if (0 != ret) {
@@ -273,7 +273,7 @@ class BatchNormalization(basic_ops.MKLOp):
                 if (0 != ret) {
                     std::cout<<"MKLNdarray_createt_buffer return: "<<ret<<", line: "<<__LINE__<<std::endl;
                     exit(1);
-                } 
+                }
             }  // else reuse %(z)s
 
             // compare input layout and internal layout, do internal to internal conversion
@@ -307,7 +307,7 @@ class BatchNormalization(basic_ops.MKLOp):
             bn_res[dnnResourceDst] = MKLNdarray_DATA(%(z)s);
             bn_res[dnnResourceWorkspace] = MKLNdarray_WORKSPACE(%(x)s);
             bn_res[dnnResourceScaleShift] = scaleShift_buffer;
-            
+
             CHECK_ERR( dnnExecute_%(precision)s(bnFwd, bn_res), err);
             first_run = 0;
         }
@@ -326,7 +326,7 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
         self.eps = eps
         self.bias = bias
         self.term = term
-    
+
     def c_support_code_struct(self, node, name):
         support_code = """
         int first_run;
@@ -338,7 +338,7 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
         size_t sizes[DIMENSION];
         size_t strides[DIMENSION];
         dnnError_t err;
-        
+
         // for backward wrt data
         void* bn_res[dnnResourceNumber];
         dnnPrimitive_t bnBwd;
@@ -347,7 +347,7 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
         dnnLayout_t layout_scaleshift;
         void* gz_internal_buffer;
         void* scaleShift_buffer;
-        
+
         // for backward wrt scaleshift
         void* BatchNormBwdScaleShift_res[dnnResourceNumber];
         dnnPrimitive_t bnBwdScaleShift;
@@ -370,7 +370,7 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
             prim_to_internal_gz = NULL;
             prim_to_internal_gz_gs = NULL;
             prim_to_internal_x_gs = NULL;
-            
+
             // layout
             layout_gz_internal = NULL;
             layout_x_internal_gs = NULL;
@@ -486,10 +486,10 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
         assert dtype in ('float32', 'float64')
         if dtype is 'float32':
             precision = 'F32'
-            t = float
+            t = 'float'
         else:
             precision = 'F64'
-            t = double
+            t = 'double'
 
         fail = sub['fail']
 
@@ -514,7 +514,6 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
                 strides[3] = strides[2] * sizes[2];
             }
 
-            
             if (first_run) {
                 // create bn bwd primitive
                 CHECK_ERR( dnnBatchNormalizationCreateBackwardData_%(precision)s(&bnBwd, NULL, MKLNdarray_LAYOUT(%(x)s), %(eps)s), err);

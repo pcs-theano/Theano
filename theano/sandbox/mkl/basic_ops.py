@@ -3,8 +3,9 @@ from theano.gof import Apply, Op
 from theano.tensor.blas import ldflags
 from theano.gradient import DisconnectedType
 from theano.tensor.nnet.abstract_conv import get_conv_output_shape
-from theano.sandbox.mkl.mkl_helper import header_text
+# from theano.sandbox.mkl.mkl_helper import header_text
 from theano.sandbox.mkl.mkl_type import MKLNdarrayType
+
 
 class MKLOp(Op):
     def c_lib_dirs(self):
@@ -651,7 +652,7 @@ class U2ILRN(BaseConvertOp):
             for (int i = 0; i < ndim; i++) {
                 dims[i] = (size_t)d[i];
             }
-           
+
             if (1 == first_run) {
                 bottomSize[0] = d[3]; //w
                 bottomSize[1] = d[2]; //h
@@ -675,7 +676,7 @@ class U2ILRN(BaseConvertOp):
                 && MKLNdarray_DIMS(%(z)s)[1] == d[1]
                 && MKLNdarray_DIMS(%(z)s)[2] == d[2]
                 && MKLNdarray_DIMS(%(z)s)[3] == d[3]) ) {
-            
+
                 if (%(z)s) Py_XDECREF(%(z)s);
                 %(z)s = (MKLNdarray*)MKLNdarray_New(ndim, dtype);
                 if (!%(z)s) {
@@ -959,7 +960,7 @@ class U2IElemwiseSum(BaseConvertOp):
                 && MKLNdarray_DIMS(%(z)s)[1] == d[1]
                 && MKLNdarray_DIMS(%(z)s)[2] == d[2]
                 && MKLNdarray_DIMS(%(z)s)[3] == d[3]) ) {
-            
+
                 if (%(z)s) Py_XDECREF(%(z)s);
                 %(z)s = (MKLNdarray*)MKLNdarray_New(ndim, dtype);
                 if (!%(z)s) {
@@ -1060,7 +1061,7 @@ class U2IBatchNormalization(BaseConvertOp):
                 && MKLNdarray_DIMS(%(z)s)[1] == d[1]
                 && MKLNdarray_DIMS(%(z)s)[2] == d[2]
                 && MKLNdarray_DIMS(%(z)s)[3] == d[3]) ) {
-            
+
                 if (%(z)s) Py_XDECREF(%(z)s);
                 %(z)s = (MKLNdarray*)MKLNdarray_New(ndim, dtype);
                 if (!%(z)s) {
@@ -1091,7 +1092,7 @@ class U2IBatchNormalization(BaseConvertOp):
             } else {
                 memcpy(MKLNdarray_DATA(%(z)s), (void*)PyArray_DATA(%(x)s), %(z)s->data_size);
             }
-            
+
             first_run = 0;
         """ % locals()
         return ccode
