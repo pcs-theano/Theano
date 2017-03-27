@@ -7,7 +7,7 @@
 #include "mkl_dnn.h"
 
 #ifndef SIZE_MAX
-#define SIZE_MAX ((size_t) - 1)
+#define SIZE_MAX ((size_t)(-1))
 #endif
 
 #ifndef Py_TYPE
@@ -46,27 +46,9 @@ char* MKL_TYPE[] = {"", "", "", "int16", "", "int32", "", "int64",
 #endif // end #if PY_MAJOR_VERSION >= 3
 
 
-typedef enum __PRIMITIVE_KINDS__{
-    prim_undefined = 0,
-    prim_conv,
-    prim_relu,
-    prim_pooling,
-    prim_lrn,
-    prim_bn,
-    prim_sum,
-    prim_concat,
-    prim_inner_product,
-    prim_softmax,
-}primitive_kinds_t;
-
-
 /**
- * struct: wrapper for MKL internal data and layout
+ * MKLNdarray: wrapper for MKL private data and layout
  * This is a Python type.
- * A fixed length 2*MAX_NDIM is specified to user_structure.
- * So MKLNdarray can describe an array whose ndim is <=16 (MAX_NDIM).
- * To avoid calling malloc and free for many times.
- *
  */
 typedef struct __MKLNdarray__{
 
@@ -97,5 +79,8 @@ __attribute__((visibility ("default"))) const size_t* MKLNdarray_DIMS(const MKLN
 __attribute__((visibility ("default"))) const size_t* MKLNdarray_STRIDES(const MKLNdarray* self);
 __attribute__((visibility ("default"))) int MKLNdarray_NDIM(const MKLNdarray* self);
 __attribute__((visibility ("default"))) int MKLNdarray_TYPE(const MKLNdarray* self);
-__attribute__((visibility ("default"))) int MKLNdarray_create_buffer(MKLNdarray *self, const dnnPrimitive_t *prim, dnnResourceType_t res_type);
+
+__attribute__((visibility ("default"))) int MKLNdarray_create_buffer_from_primitive(MKLNdarray *self,
+                                                                                    const dnnPrimitive_t *prim,
+                                                                                    dnnResourceType_t res_type);
 #endif

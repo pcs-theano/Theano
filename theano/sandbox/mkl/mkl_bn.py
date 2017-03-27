@@ -222,9 +222,9 @@ class BatchNormalization(basic_ops.MKLOp):
                 CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_x_internal, bnFwd, dnnResourceSrc), err);
 
                 // create workspace buffer in x
-                ret = MKLNdarray_create_buffer(%(x)s, &bnFwd, dnnResourceWorkspace);
+                ret = MKLNdarray_create_buffer_from_primitive(%(x)s, &bnFwd, dnnResourceWorkspace);
                 if (0 != ret) {
-                    std::cout<<"MKLNdarray_create_buffer return: "<<ret<<", line: "<<__LINE__<<std::endl;
+                    std::cout<<"MKLNdarray_create_buffer_from_primitive return: "<<ret<<", line: "<<__LINE__<<std::endl;
                     exit(1);
                 }
 
@@ -269,7 +269,7 @@ class BatchNormalization(basic_ops.MKLOp):
                 }
 
                 // create dst layout and buffer in z
-                ret = MKLNdarray_create_buffer(%(z)s, &bnFwd, dnnResourceDst);
+                ret = MKLNdarray_create_buffer_from_primitive(%(z)s, &bnFwd, dnnResourceDst);
                 if (0 != ret) {
                     std::cout<<"MKLNdarray_createt_buffer return: "<<ret<<", line: "<<__LINE__<<std::endl;
                     exit(1);
@@ -591,9 +591,9 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
                     %(fail)s;
                 }
 
-                status = MKLNdarray_create_buffer(%(z)s, &bnBwd, dnnResourceDiffSrc);
+                status = MKLNdarray_create_buffer_from_primitive(%(z)s, &bnBwd, dnnResourceDiffSrc);
                 if (0 != status) {
-                    std::cout<<"MKLNdarray_create_buffer failed: "<<status<<", line: "<<__LINE__<<std::endl;
+                    std::cout<<"MKLNdarray_create_buffer_from_primitive failed: "<<status<<", line: "<<__LINE__<<std::endl;
                     exit(1);
                 }
             }

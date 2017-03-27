@@ -688,7 +688,7 @@ class U2ILRN(BaseConvertOp):
                     %(fail)s;
                 }
 
-                status = MKLNdarray_create_buffer(%(z)s, &primitive, dnnResourceSrc);
+                status = MKLNdarray_create_buffer_from_primitive(%(z)s, &primitive, dnnResourceSrc);
                 if (status != 0) {
                     %(fail)s;
                 }
@@ -972,7 +972,7 @@ class U2IElemwiseSum(BaseConvertOp):
                     %(fail)s;
                 }
 
-                status = MKLNdarray_create_buffer(%(z)s, &primitive, dnnResourceMultipleSrc);
+                status = MKLNdarray_create_buffer_from_primitive(%(z)s, &primitive, dnnResourceMultipleSrc);
                 if (status != 0) {
                     %(fail)s;
                 }
@@ -1073,7 +1073,7 @@ class U2IBatchNormalization(BaseConvertOp):
                     %(fail)s;
                 }
 
-                status = MKLNdarray_create_buffer(%(z)s, &primitive, dnnResourceSrc);
+                status = MKLNdarray_create_buffer_from_primitive(%(z)s, &primitive, dnnResourceSrc);
                 if (status != 0) {
                     %(fail)s;
                 }
