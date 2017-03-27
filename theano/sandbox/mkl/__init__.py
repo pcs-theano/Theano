@@ -1,11 +1,9 @@
 from __future__ import absolute_import, print_function, division
 import os
-import errno
 import sys
 import logging
 import textwrap
 import stat
-import shutil
 import theano
 from theano import config, gof
 from six import integer_types
@@ -40,22 +38,25 @@ def register_opt(*tags, **kwargs):
 
 mkl_path = os.path.abspath(os.path.split(__file__)[0])
 mkl_ndarray_loc = os.path.join(config.compiledir, 'mkl_ndarray')
-mkl_ndarray_so = os.path.join(mkl_ndarray_loc, 'mkl_ndarray.' + get_lib_extension())
-libmkl_ndarray_so = os.path.join(mkl_ndarray_loc, 'libmkl_ndarray.' + get_lib_extension())
+mkl_ndarray_so = os.path.join(
+    mkl_ndarray_loc, 'mkl_ndarray.' + get_lib_extension())
+libmkl_ndarray_so = os.path.join(
+    mkl_ndarray_loc, 'libmkl_ndarray.' + get_lib_extension())
 
 
 def try_import_mkl_ndarray():
     mkl_files = ('mkl_ndarray.c', 'mkl_ndarray.h')
 
-    stat_times = [os.stat(os.path.join(mkl_path, mkl_file))[stat.ST_MTIME] for mkl_file in mkl_files]
-    data = max(stat_times)
+    stat_times = [os.stat(os.path.join(mkl_path, mkl_file))[stat.ST_MTIME]
+                  for mkl_file in mkl_files]
+    date = max(stat_times)
     if os.path.exists(mkl_ndarray_so):
-        if data >= os.stat(mkl_ndarray_so)[stat.ST_MTIME]:
+        if date >= os.stat(mkl_ndarray_so)[stat.ST_MTIME]:
             return False
 
     try:
         sys.path[0:0] = [config.compiledir]
-        import mkl_ndarray.mkl_ndarray
+        import mkl_ndarray.mkl_ndarray  # noqa
         del sys.path[0]
     except ImportError:
         return False
@@ -81,7 +82,7 @@ if compile_mkl_ndarray:
                                      libs=['mklml_intel' if 'mklml_intel' in config.blas.ldflags else 'mkl_rt'],
                                      preargs=preargs,)
 
-                from mkl_ndarray.mkl_ndarray import *
+                from mkl_ndarray.mkl_ndarray import *  # noqa
             except Exception as e:
                 _logger.error('Failed to compile mkl_ndarray.c: %s', str(e))
     finally:
@@ -234,6 +235,8 @@ mkl_available.msg = None
 
 
 # register name of 'mkl_opt' in opt.py and then add tags for it.
-if mkl_available():
+try:
     from . import opt
     opt.optdb.add_tags('mkl_opt', 'fast_compile', 'fast_run')
+except:
+    pass
