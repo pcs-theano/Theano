@@ -284,7 +284,8 @@ class U2I_Conv(BaseConvertOp):
             k_n, k_c, k_h, k_w = self.kshp
             grp = 1
 
-        o_n, o_c, o_h, o_w = get_conv_output_shape(image_shape=self.imshp,
+
+	o_n, o_c, o_h, o_w = get_conv_output_shape(image_shape=self.imshp,
                                                    kernel_shape=self.kshp,
                                                    border_mode=self.border_mode,
                                                    filter_dilation=self.filter_dilation,
