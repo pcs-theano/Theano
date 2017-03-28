@@ -139,7 +139,7 @@ class MKLVersion(gof.Op):
             """
             MKLVersion v;
             mkl_get_version(&v);
-            %(o)s = PyInt_FromLong(atoi(v.Build));
+            %(o)s = PyLong_FromLong(atoi(v.Build));
             """) % locals()
 
     def c_code_cache_version(self):
