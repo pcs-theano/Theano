@@ -1,6 +1,5 @@
 #include <Python.h>
 #include <structmember.h>
-#include "theano_mod_helper.h"
 #include <numpy/arrayobject.h>
 #include <stdlib.h>
 #include "mkl_ndarray.h"
