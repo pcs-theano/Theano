@@ -75,8 +75,9 @@ class test_mkl_lrn(unittest.TestCase):
         # for shape[0]
         input_data = numpy.random.rand(*shape[0]).astype(theano.config.floatX)
         t = self.ground_truth_normalizer(input_data, k=k, n=n, alpha=alpha, beta=beta)
-        assert (fz(input_data)).shape == t.shape
-        assert numpy.allclose(fz(input_data), t)
+        o = fz(input_data)
+        assert o.shape == t.shape
+        assert numpy.allclose(o, t)
         # for shape[1]. It is slow to compute t since the shape is large.
         # fz = theano.function([x], z, mode=mode_with_mkl)
         # input_data = numpy.random.rand(*shape[1]).astype(theano.config.floatX)
@@ -106,8 +107,8 @@ class test_mkl_lrn(unittest.TestCase):
         f = theano.function([x], z, mode=mode_with_mkl)
         imval = numpy.random.rand(4, 2, 4, 4).astype(theano.config.floatX)
 
-        f(imval)
-        assert f(imval).dtype == 'float32'
+        o = f(imval)
+        assert o.dtype == 'float32'
 
         theano.config.floatX = old_floatX
 
@@ -123,8 +124,8 @@ class test_mkl_lrn(unittest.TestCase):
         f = theano.function([x], z, mode=mode_with_mkl)
         imval = numpy.random.rand(4, 2, 4, 4).astype(theano.config.floatX)
 
-        f(imval)
-        assert f(imval).dtype == 'float64'
+        o = f(imval)
+        assert o.dtype == 'float64'
 
         theano.config.floatX = old_floatX
 
@@ -161,7 +162,6 @@ class test_mkl_lrn(unittest.TestCase):
         assert isinstance(topo[0].op, U2ILRN)
         assert isinstance(topo[1].op, mkl_lrn.LRN)
         assert isinstance(topo[2].op, I2U)
-
 
 class test_lrn_grad(unittest.TestCase):
     def test_lrn_grad_wrong_dim(self):
@@ -253,7 +253,6 @@ class test_lrn_grad(unittest.TestCase):
         assert isinstance(topo[8].op, I2UGrad)
         assert isinstance(topo[9].op, mkl_lrn.LRNGrad)
         assert isinstance(topo[10].op, U2IGrad)
-
 
 if __name__ == '__main__':
     unittest.main()

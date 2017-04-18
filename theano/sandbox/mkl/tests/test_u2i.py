@@ -13,7 +13,7 @@ import numpy
 
 def test_i2u():
 
-    x = MKLNdarrayType(broadcastable=(True, True, True, True), dtype='float32')('x')
+    x = MKLNdarrayType(broadcastable=(False, False, False, False), dtype='float32')('x')
     y = u2i_op.I2U_Op()(x)
 
     f = theano.function(inputs=[x], outputs=y)
@@ -43,7 +43,7 @@ def test_u2i():
 
 
 def test_i2i():
-    x = MKLNdarrayType(broadcastable=(True, True, True, True), dtype='float32')('x')
+    x = MKLNdarrayType(broadcastable=(False, False, False, False), dtype='float32')('x')
     y = u2i_op.I2IBN(eps=0.5)(x)
 
     f = theano.function(inputs=[x], outputs=y)

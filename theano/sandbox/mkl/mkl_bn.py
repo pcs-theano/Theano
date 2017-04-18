@@ -76,7 +76,7 @@ class BatchNormalization(basic_ops.MKLOp):
             raise TypeError('BatchNormalization: input x should be an instance of MKLNdarrayType')
 
         if x.type.ndim != 4:
-            raise TypeError()
+            raise TypeError('Input should be a 4-dim tensor')
         # x = tensor.as_tensor_variable(x)
         scale = tensor.as_tensor_variable(scale)
         shift = tensor.as_tensor_variable(shift)
@@ -130,7 +130,7 @@ class BatchNormalization(basic_ops.MKLOp):
         """
         return init_code
 
-    def c_code_cleanup_struct(self, node, name, input_names, output_names, sub):
+    def c_cleanup_code_struct(self, node, name):
         dtype = node.inputs[0].type.dtype
         assert dtype in ('float32', 'float64')
 
@@ -221,13 +221,6 @@ class BatchNormalization(basic_ops.MKLOp):
                 // create internal layout for input x
                 CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_x_internal, bnFwd, dnnResourceSrc), err);
 
-                // create workspace buffer in x
-                ret = MKLNdarray_create_buffer_from_primitive(%(x)s, &bnFwd, dnnResourceWorkspace);
-                if (0 != ret) {
-                    std::cout<<"MKLNdarray_create_buffer_from_primitive return: "<<ret<<", line: "<<__LINE__<<std::endl;
-                    exit(1);
-                }
-
                 // layout for scaleshift
                 CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_scaleshift, bnFwd, dnnResourceScaleShift), err);
 
@@ -245,6 +238,15 @@ class BatchNormalization(basic_ops.MKLOp):
                             exit(1);
                         }
                     }
+                }
+            }
+
+            // create workspace buffer in x
+            if (MKLNdarray_WORKSPACE(%(x)s) == NULL) {
+                ret = MKLNdarray_create_buffer_from_primitive(%(x)s, &bnFwd, dnnResourceWorkspace);
+                if (0 != ret) {
+                    std::cout<<"MKLNdarray_create_buffer_from_primitive return: "<<ret<<", line: "<<__LINE__<<std::endl;
+                    exit(1);
                 }
             }
 
@@ -281,7 +283,7 @@ class BatchNormalization(basic_ops.MKLOp):
                 if (NULL == prim_to_internal) {
                     CHECK_ERR( dnnConversionCreate_%(precision)s(&prim_to_internal, MKLNdarray_LAYOUT(%(x)s), layout_x_internal), err);
                 }
-                if (NULL != x_internal_buffer) {
+                if (NULL == x_internal_buffer) {
                     CHECK_ERR( dnnAllocateBuffer_%(precision)s(&x_internal_buffer, layout_x_internal), err);
                 }
 
@@ -390,7 +392,7 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
         """
         return init_code
 
-    def c_code_cleanup_struct(self, node, name, input_names, output_names, sub):
+    def c_cleanup_code_struct(self, node, name):
         dtype = node.inputs[0].type.dtype
         assert dtype in ('float32', 'float64')
 
@@ -418,14 +420,14 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
             layout_gs_internal_gs = NULL;
         }
         if (NULL != layout_scaleshift) {
-            dnnLayoutDelet_%(precision)s(layout_scaleshift);
+            dnnLayoutDelete_%(precision)s(layout_scaleshift);
             layout_scaleshift = NULL;
         }
 
         // release primitive
         if (NULL != bnBwd) {
-            dnnDelete_%(precision)s(dnnBwd);
-            dnnBwd = NULL;
+            dnnDelete_%(precision)s(bnBwd);
+            bnBwd = NULL;
         }
         if (NULL != bnBwdScaleShift) {
             dnnDelete_%(precision)s(bnBwdScaleShift);
@@ -465,7 +467,7 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
             dnnReleaseBuffer_%(precision)s(gs_internal_buffer_gs);
             gs_internal_buffer_gs = NULL;
         }
-        """ % precision
+        """ % locals()
 
     def make_node(self, x, gz, scale, shift):
         scale = as_tensor_variable(scale)
@@ -497,6 +499,8 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
         {
             %(t)s *g_scale_buffer_ptr = NULL;
             %(t)s *g_shift_buffer_ptr = NULL;
+            %(t)s *scale_buffer_ptr = NULL;
+            %(t)s *shift_buffer_ptr = NULL;
 
             if (first_run) {
                 typenum    = MKLNdarray_TYPE((MKLNdarray*)%(x)s);
@@ -516,7 +520,8 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
 
             if (first_run) {
                 // create bn bwd primitive
-                CHECK_ERR( dnnBatchNormalizationCreateBackwardData_%(precision)s(&bnBwd, NULL, MKLNdarray_LAYOUT(%(x)s), %(eps)s), err);
+                CHECK_ERR( dnnBatchNormalizationCreateBackwardData_%(precision)s(&bnBwd, NULL,
+                                                                                 MKLNdarray_LAYOUT(%(x)s), %(eps)s), err);
 
                 // layout for internal gz layout
                 CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_gz_internal, bnBwd, dnnResourceDiffDst), err);
@@ -527,6 +532,7 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
                 // buffer for scaleshift
                 CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)(&scaleShift_buffer), layout_scaleshift), err);
                 dnnLayoutDelete_%(precision)s(layout_scaleshift);
+                layout_scaleshift = NULL;
 
                 if (!%(bias)s) {
                     for (int i = 0; i < x_channels; i++) {
@@ -546,9 +552,15 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
                                                                                            NULL,
                                                                                            MKLNdarray_LAYOUT(%(x)s),
                                                                                            %(eps)s), err);
-                    CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_x_internal_gs, bnBwdScaleShift, dnnResourceSrc), err);
-                    CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_gz_internal_gs, bnBwdScaleShift, dnnResourceDiffDst), err);
-                    CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_gs_internal_gs, bnBwdScaleShift, dnnResourceDiffScaleShift), err);
+                    CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_x_internal_gs,
+                                                                          bnBwdScaleShift,
+                                                                          dnnResourceSrc), err);
+                    CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_gz_internal_gs,
+                                                                          bnBwdScaleShift,
+                                                                          dnnResourceDiffDst), err);
+                    CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_gs_internal_gs,
+                                                                          bnBwdScaleShift,
+                                                                          dnnResourceDiffScaleShift), err);
 
                     %(g_scale)s = (PyArrayObject*)PyArray_ZEROS(PyArray_NDIM(%(scale)s),
                                                                 PyArray_DIMS(%(scale)s),
@@ -614,16 +626,20 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
 
             // compare gz layout with internal layout, do internal to internal conversion
             if (! dnnLayoutCompare_%(precision)s(layout_gz_internal, MKLNdarray_LAYOUT(%(gz)s))) {
-                if (NULL != prim_to_internal_gz) {
-                    CHECK_ERR( dnnConversionCreate_%(precision)s(&prim_to_internal_gz, MKLNdarray_LAYOUT(&(gz)s), layout_gz_internal), err);
+                if (NULL == prim_to_internal_gz) {
+                    CHECK_ERR( dnnConversionCreate_%(precision)s(&prim_to_internal_gz,
+                                                                 MKLNdarray_LAYOUT(%(gz)s),
+                                                                 layout_gz_internal), err);
                 }
 
-                if (NULL != gz_internal_buffer) {
+                if (NULL == gz_internal_buffer) {
                     CHECK_ERR( dnnAllocateBuffer_%(precision)s(&gz_internal_buffer, layout_gz_internal), err);
                 }
 
                 if (prim_to_internal_gz) {
-                    CHECK_ERR( dnnConversionExecute_%(precision)s(prim_to_internal_gz, MKLNdarray_DATA(%(gz)s), gz_internal_buffer), err);
+                    CHECK_ERR( dnnConversionExecute_%(precision)s(prim_to_internal_gz,
+                                                                  MKLNdarray_DATA(%(gz)s),
+                                                                  gz_internal_buffer), err);
                 }
                 bn_res[dnnResourceDiffDst] = gz_internal_buffer;
             } else {
@@ -634,18 +650,19 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
             bn_res[dnnResourceWorkspace] = MKLNdarray_WORKSPACE(%(x)s);
             bn_res[dnnResourceScaleShift] = (void*)scaleShift_buffer;
             bn_res[dnnResourceDiffSrc] = MKLNdarray_DATA(%(z)s);
+            bn_res[dnnResourceSrc] = MKLNdarray_DATA(%(x)s);
             CHECK_ERR( dnnExecute_%(precision)s(bnBwd, bn_res), err);
 
             if (%(bias)s) {
                 // compare gz layout with internal layout, do internal to internal conversion
                 if (! dnnLayoutCompare_%(precision)s(layout_gz_internal_gs, MKLNdarray_LAYOUT(%(gz)s))) {
-                    if (NULL != prim_to_internal_gz_gs) {
+                    if (NULL == prim_to_internal_gz_gs) {
                         CHECK_ERR( dnnConversionCreate_%(precision)s(&prim_to_internal_gz_gs,
-                                                                     MKLNdarray_LAYOUT(&(gz)s),
+                                                                     MKLNdarray_LAYOUT(%(gz)s),
                                                                      layout_gz_internal_gs), err);
                     }
 
-                    if (NULL != gz_internal_buffer_gs) {
+                    if (NULL == gz_internal_buffer_gs) {
                         CHECK_ERR( dnnAllocateBuffer_%(precision)s(&gz_internal_buffer_gs, layout_gz_internal_gs), err);
                     }
 
@@ -661,13 +678,13 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
 
                 //compare x input laout with internal layout, do internal to internal conversion
                 if (! dnnLayoutCompare_%(precision)s(layout_x_internal_gs, MKLNdarray_LAYOUT(%(x)s))) {
-                    if (NULL != prim_to_internal_x_gs) {
+                    if (NULL == prim_to_internal_x_gs) {
                         CHECK_ERR( dnnConversionCreate_%(precision)s(&prim_to_internal_x_gs,
-                                                                     MKLNdarray_LAYOUT(&(x)s),
+                                                                     MKLNdarray_LAYOUT(%(x)s),
                                                                      layout_x_internal_gs), err);
                     }
 
-                    if (NULL != x_internal_buffer_gs) {
+                    if (NULL == x_internal_buffer_gs) {
                         CHECK_ERR( dnnAllocateBuffer_%(precision)s(&x_internal_buffer_gs, layout_x_internal_gs), err);
                     }
 
@@ -686,7 +703,7 @@ class BatchNormalizationGrad(basic_ops.MKLOp):
                 CHECK_ERR( dnnExecute_%(precision)s(bnBwdScaleShift, BatchNormBwdScaleShift_res), err);
 
                 for (int i = 0; i < x_channels; i++) {
-                    g_scale_buffer_ptr[i] = ((%(t)s*)gs_interanl_buffer_gs)[i];
+                    g_scale_buffer_ptr[i] = ((%(t)s*)gs_internal_buffer_gs)[i];
                     g_shift_buffer_ptr[i] = 0;
                     if (%(term)s) {
                         g_shift_buffer_ptr[i] =  ((%(t)s*)gs_internal_buffer_gs)[x_channels + i];

@@ -1,6 +1,6 @@
 
-from theano import gof, tensor, Variable
-from theano.sandbox.mkl import basic_ops, mkl_helper
+from theano import gof, tensor
+from theano.sandbox.mkl import basic_ops, mkl_type
 
 
 class AbstractLRN(gof.Op):
@@ -96,7 +96,9 @@ class LRN(basic_ops.MKLOp):
         self.k = k
 
     def make_node(self, x):
-        x = tensor.as_tensor_variable(x)
+        # x = tensor.as_tensor_variable(x)
+        if not isinstance(x.type, mkl_type.MKLNdarrayType):
+            raise TypeError('LRN: input x should be an instance of MKLNdarrayType')
         if x.type.ndim != 4:
             raise TypeError('Input should be a 4-dim tensor')
         return gof.Apply(self, [x], [x.type()])
@@ -107,80 +109,69 @@ class LRN(basic_ops.MKLOp):
         return [LRNGrad(alpha=self.alpha, beta=self.beta, k=self.k,
                         n=self.n)(x, gz)]
 
-    def c_support_code(self):
-        support_code = mkl_helper.header_text()
-        support_code += """
-        #define DIMENSION 4
-
-        #define CHECK_ERR(f, err) \\
-                do { \\
-                    (err) = (f); \\
-                    if ((err) != E_SUCCESS) { \\
-                        printf("Error in file [%s:%d], err code (%d)", \\
-                                __FILE__, __LINE__, err); \\
-                        exit(1); \\
-                    } \\
-                } while(0)
-        """
-        return support_code
-
     def c_support_code_struct(self, node, name):
         support_code = """
+            int typenum;
             dnnError_t err;
             int first_run;
-            void* internal_buf;
-            void* user_buf;
+            void* buffer_internal;
             dnnLayout_t layout_internal;
-            dnnLayout_t layout_usr;
+
             dnnPrimitive_t to_internal;
-            dnnPrimitive_t from_internal;
             dnnPrimitive_t primitive;
-            void* convert_resources[dnnResourceNumber];
+
             size_t bottomSize[DIMENSION];
             size_t bottomStride[DIMENSION];
-            void* x_buf_previous;
-            dnnLayout_t x_layout_previous;
-            dnnLayout_t layout_internal_output;
-            dnnLayout_t layout_internal_workspace;
-            void* buf_workspace;
-            void* buf_output;
-            void* workspace_ptr_ptr[4];
+
             void* lrn_res[dnnResourceNumber];
         """
         return support_code
 
-    def c_code_cleanup_struct(self, node, name, input_names, output_names, sub):
+    def c_init_code_struct(self, node, name, sub):
+        init_code = """
+            typenum = 0;
+            first_run = 1;
+            buffer_internal = NULL;
+            layout_internal = NULL;
+            to_internal = NULL;
+            primitive = NULL;
+        """
+        return init_code
+
+    def c_cleanup_code_struct(self, node, name):
         dtype = str(node.__dict__['inputs'][0].dtype)
         assert dtype in ('float32', 'float64')
 
         if 'float32' == dtype:
-            sub['precision'] = 'F32'
+            precision = 'F32'
         else:
-            sub['precision'] = 'F64'
+            precision = 'F64'
 
         ccode = """
-            // dnnReleaseBuffer_%(precision)s(buf_output);
-        """ % sub
-        return ccode
+            // release layout
+            if (NULL != layout_internal) {
+                dnnLayoutDelete_%(precision)s(layout_internal);
+                layout_internal = NULL;
+            }
 
-    def c_init_code_struct(self, node, name, sub):
-        init_code = """
-            first_run = 1;
-            internal_buf = NULL;
-            user_buf = NULL;
-            layout_internal = NULL;
-            layout_usr = NULL;
-            to_internal = NULL;
-            from_internal = NULL;
-            primitive = NULL;
-            x_buf_previous = NULL;
-            x_layout_previous = NULL;
-            layout_internal_output = NULL;
-            layout_internal_workspace = NULL;
-            buf_workspace = NULL;
-            buf_output = NULL;
-        """
-        return init_code
+            // release primitive
+            if (NULL != primitive) {
+                dnnDelete_%(precision)s(primitive);
+                primitive = NULL;
+            }
+
+            if (NULL != to_internal) {
+                dnnDelete_%(precision)s(to_internal);
+                to_internal = NULL;
+            }
+
+            // release buffer
+            if (NULL != buffer_internal) {
+                dnnReleaseBuffer_%(precision)s(buffer_internal);
+                buffer_internal = NULL;
+            }
+        """ % locals()
+        return ccode
 
     def c_code(self, node, name, inp, out, sub):
         x, = inp
@@ -202,12 +193,14 @@ class LRN(basic_ops.MKLOp):
 
         ccode = """
         {
-            ((void **)PyArray_DATA(%(x)s))[2] = (void *)workspace_ptr_ptr;
+            int status = 0;
             if (first_run) {
-                bottomSize[0] = PyArray_DIMS(%(x)s)[3];  // w
-                bottomSize[1] = PyArray_DIMS(%(x)s)[2];  // h
-                bottomSize[2] = PyArray_DIMS(%(x)s)[1];  // c
-                bottomSize[3] = PyArray_DIMS(%(x)s)[0];  // n
+                typenum = MKLNdarray_TYPE((MKLNdarray*)%(x)s);
+
+                bottomSize[0] = MKLNdarray_DIMS(%(x)s)[3];  // w
+                bottomSize[1] = MKLNdarray_DIMS(%(x)s)[2];  // h
+                bottomSize[2] = MKLNdarray_DIMS(%(x)s)[1];  // c
+                bottomSize[3] = MKLNdarray_DIMS(%(x)s)[0];  // n
 
                 bottomStride[0] = 1;
                 bottomStride[1] = bottomSize[0];
@@ -215,74 +208,72 @@ class LRN(basic_ops.MKLOp):
                 bottomStride[3] = bottomSize[0] * bottomSize[1] * bottomSize[2];
             }
 
-            if ((!%(z)s) ||
-                (PyArray_DIMS(%(z)s)[0] != PyArray_DIMS(%(x)s)[0]) ||
-                (PyArray_DIMS(%(z)s)[1] != PyArray_DIMS(%(x)s)[1])) {
-
-                if (%(z)s) {
-                    Py_XDECREF(%(z)s);
-                }
-
-                %(z)s = (PyArrayObject*)PyArray_ZEROS(DIMENSION,
-                                                      PyArray_DIMS(%(x)s),
-                                                      PyArray_TYPE(%(x)s),
-                                                      0);
-
-                if (NULL == %(z)s) {
-                    %(fail)s
-                }
-            }
-
-            x_buf_previous = ((void **)PyArray_DATA(%(x)s))[1];
-            x_layout_previous = ((dnnLayout_t *)PyArray_DATA(%(x)s))[0];
-
             if (first_run) {
                 // primitive for LRN
-                CHECK_ERR( dnnLRNCreateForward_%(precision)s(&primitive, NULL, x_layout_previous,
+                CHECK_ERR( dnnLRNCreateForward_%(precision)s(&primitive, NULL, MKLNdarray_LAYOUT(%(x)s),
                                                              %(size)s, %(alpha)s, %(beta)s, %(k)s), err );
 
                 // internal layout for input
                 CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_internal, primitive, dnnResourceSrc), err );
 
-                if (!dnnLayoutCompare_%(precision)s(x_layout_previous, layout_internal)) {
-                    CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, x_layout_previous, layout_internal), err );
-                }
-
-                // workspace
-                if (NULL == layout_internal_workspace) {
-                    CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_internal_workspace, primitive,
-                                                                          dnnResourceWorkspace), err );
-                }
-
-                if (NULL == buf_workspace) {
-                    CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&buf_workspace, layout_internal_workspace), err );
-                }
-
-                dnnLayoutDelete_%(precision)s(layout_internal_workspace);
-                ((void **)workspace_ptr_ptr)[0] = buf_workspace;
-
-                // output
-                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_internal_output, primitive, dnnResourceDst), err );
             }
 
-            if (NULL != to_internal) {
-                CHECK_ERR( dnnConversionExecute_%(precision)s(to_internal, x_buf_previous, internal_buf), err );
-                lrn_res[dnnResourceSrc] = (void*)internal_buf;
+            // create workspace buffer in x
+            if (MKLNdarray_WORKSPACE(%(x)s) == NULL) {
+                status = MKLNdarray_create_buffer_from_primitive(%(x)s, &primitive, dnnResourceWorkspace);
+                if (0 != status) {
+                    std::cout<< "MKLNdarray_create_buffer_from_primitive failed, return: "<<status<<", line: "<<__LINE__<<std::endl;
+                    exit(1);
+                }
+            }
+
+            if (! (%(z)s
+                && MKLNdarray_Check((PyObject*)%(z)s)
+                && MKLNdarray_NDIM(%(z)s) == MKLNdarray_NDIM(%(x)s)
+                && MKLNdarray_DIMS(%(z)s)[0] == MKLNdarray_DIMS(%(x)s)[0]
+                && MKLNdarray_DIMS(%(z)s)[1] == MKLNdarray_DIMS(%(x)s)[1]
+                && MKLNdarray_DIMS(%(z)s)[2] == MKLNdarray_DIMS(%(x)s)[2]
+                && MKLNdarray_DIMS(%(z)s)[3] == MKLNdarray_DIMS(%(x)s)[3] )) {
+
+                if (%(z)s) Py_XDECREF(%(z)s);
+                %(z)s = (MKLNdarray*)MKLNdarray_New(MKLNdarray_NDIM(%(x)s), typenum);
+
+                if (! %(z)s) {
+                    %(fail)s
+                }
+
+                status = MKLNdarray_set_structure(%(z)s, MKLNdarray_NDIM(%(x)s), MKLNdarray_DIMS(%(x)s));
+                if (status != 0) {
+                    %(fail)s;
+                }
+
+                status = MKLNdarray_create_buffer_from_primitive(%(z)s, &primitive, dnnResourceDst);
+                if (status != 0) {
+                    std::cout<<"MKLNdarray_create_buffer_from_primitive fail, return: "<<status<<", line: "<<__LINE__<<std::endl;
+                    exit(1);
+                }
+            }  // else reuse %(z)s
+
+            if (! dnnLayoutCompare_%(precision)s(layout_internal, MKLNdarray_LAYOUT(%(x)s))) {
+                if (NULL == to_internal) {
+                    CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, MKLNdarray_LAYOUT(%(x)s), layout_internal), err);
+                }
+
+                if (NULL == buffer_internal) {
+                    CHECK_ERR( dnnAllocateBuffer_%(precision)s(&buffer_internal, layout_internal), err);
+                }
+
+                if (to_internal) {
+                    CHECK_ERR( dnnConversionExecute_%(precision)s(to_internal, MKLNdarray_DATA(%(x)s), buffer_internal), err);
+                }
+
+                lrn_res[dnnResourceSrc] = buffer_internal;
             } else {
-                lrn_res[dnnResourceSrc] = (void*)x_buf_previous;
+                lrn_res[dnnResourceSrc] = MKLNdarray_DATA(%(x)s);
             }
-
-            if (NULL == buf_output) {
-                CHECK_ERR( dnnAllocateBuffer_%(precision)s(&buf_output, layout_internal_output), err );
-            }
-
-            lrn_res[dnnResourceDst] = buf_output;
-            lrn_res[dnnResourceWorkspace] = buf_workspace;
-
+            lrn_res[dnnResourceDst] = MKLNdarray_DATA(%(z)s);
+            lrn_res[dnnResourceWorkspace] = MKLNdarray_WORKSPACE(%(x)s);
             CHECK_ERR( dnnExecute_%(precision)s(primitive, lrn_res), err );
-
-            ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_internal_output;
-            ((void**)PyArray_DATA(%(z)s))[1] = buf_output;
             first_run = 0;
         }
         """ % locals()
@@ -314,90 +305,51 @@ class LRNGrad(basic_ops.MKLOp):
         self.k = k
         self.n = n
 
-    def c_support_code(self):
-        support_code = mkl_helper.header_text()
-        support_code += """
-        #define DIMENSION 4
+    def make_node(self, x, gz):
+        if not isinstance(x.type, mkl_type.MKLNdarrayType) or x.type.ndim != 4:
+            raise TypeError('LRNGrad: Input x type error or dimension error.')
+        if not isinstance(gz.type, mkl_type.MKLNdarrayType) or gz.type.ndim != 4:
+            raise TypeError('LRNGrad: Inputs gz type error or dimension error.')
 
-        #define CHECK_ERR(f, err) \\
-                do { \\
-                    (err) = (f); \\
-                    if ((err) != E_SUCCESS) { \\
-                        printf("Error in file [%s:%d], err code (%d)", \\
-                                __FILE__, __LINE__, err); \\
-                        exit(1); \\
-                    } \\
-                } while(0)
-        """
-        return support_code
+        return gof.Apply(self, [x, gz], [x.type()])
 
     def c_support_code_struct(self, node, name):
         support_code = """
+            int typenum;
             dnnError_t err;
             int first_run;
-            void* internal_buf;
-            void* user_buf;
-            dnnLayout_t layout_internal;
-            dnnLayout_t layout_usr;
-            dnnPrimitive_t to_internal;
-            dnnPrimitive_t from_internal;
             dnnPrimitive_t primitive;
-            void* convert_resources[dnnResourceNumber];
             size_t bottomSize[DIMENSION];
             size_t bottomStride[DIMENSION];
-            void* x_buf_previous;
-            dnnLayout_t x_layout_previous;
-            dnnLayout_t layout_internal_output;
-            dnnLayout_t layout_internal_workspace;
-            void* buf_diff;
-            void* buf_gz;
-            void* buf_output;
-            void* workspace_ptr;
             void* lrn_res[dnnResourceNumber];
         """
         return support_code
 
     def c_init_code_struct(self, node, name, sub):
         init_code = """
+            typenum = 0;
             first_run = 1;
-            internal_buf = NULL;
-            user_buf = NULL;
-            layout_internal = NULL;
-            layout_usr = NULL;
-            to_internal = NULL;
-            from_internal = NULL;
             primitive = NULL;
-            x_buf_previous = NULL;
-            x_layout_previous = NULL;
-            layout_internal_output = NULL;
-            layout_internal_workspace = NULL;
-            buf_diff = NULL;
-            buf_gz = NULL;
-            buf_output = NULL;
-            workspace_ptr = NULL;
         """
         return init_code
 
-    def c_code_cleanup_struct(self, node, name, input_names, output_names, sub):
+    def c_cleanup_code_struct(self, node, name):
         dtype = str(node.__dict__['inputs'][0].dtype)
         assert dtype in ('float32', 'float64')
 
         if 'float32' == dtype:
-            sub['precision'] = 'F32'
+            precision = 'F32'
         else:
-            sub['precision'] = 'F64'
+            precision = 'F64'
 
         ccode = """
-            // dnnReleaseBuffer_%(precision)s(buf_diff);
-        """ % sub
+            // release primitive
+            if (NULL != primitive) {
+                dnnDelete_%(precision)s(primitive);
+                primitive = NULL;
+            }
+        """ % locals()
         return ccode
-
-    def make_node(self, x, gz):
-        if not isinstance(x, Variable) or x.type.ndim != 4:
-            raise TypeError('Input x type error or dimension error.')
-        if not isinstance(gz, Variable) or gz.type.ndim != 4:
-            raise TypeError('Inputs gz type error or dimension error.')
-        return gof.Apply(self, [x, gz], [x.type()])
 
     def c_code(self, node, name, inp, out, sub):
         x, gz, = inp
@@ -419,61 +371,55 @@ class LRNGrad(basic_ops.MKLOp):
 
         ccode = """
         {
-            workspace_ptr = ((void**)PyArray_DATA(%(x)s))[2];
+            int status = 0;
             if (first_run) {
-                bottomSize[0] = PyArray_DIMS(%(x)s)[3];  // w
-                bottomSize[1] = PyArray_DIMS(%(x)s)[2];  // h
-                bottomSize[2] = PyArray_DIMS(%(x)s)[1];  // c
-                bottomSize[3] = PyArray_DIMS(%(x)s)[0];  // n
+                typenum = MKLNdarray_TYPE(%(x)s);
+
+                bottomSize[0] = MKLNdarray_DIMS(%(x)s)[3];  // w
+                bottomSize[1] = MKLNdarray_DIMS(%(x)s)[2];  // h
+                bottomSize[2] = MKLNdarray_DIMS(%(x)s)[1];  // c
+                bottomSize[3] = MKLNdarray_DIMS(%(x)s)[0];  // n
 
                 bottomStride[0] = 1;
                 bottomStride[1] = bottomSize[0];
                 bottomStride[2] = bottomSize[0] * bottomSize[1];
                 bottomStride[3] = bottomSize[0] * bottomSize[1] * bottomSize[2];
-            }
 
-            if ((!%(z)s) ||
-                (PyArray_DIMS(%(z)s)[0] != PyArray_DIMS(%(x)s)[0]) ||
-                (PyArray_DIMS(%(z)s)[1] != PyArray_DIMS(%(x)s)[1])) {
-
-                if (%(z)s) {
-                    Py_XDECREF(%(z)s);
-                }
-
-                %(z)s = (PyArrayObject*)PyArray_ZEROS(DIMENSION,
-                                                      PyArray_DIMS(%(x)s),
-                                                      PyArray_TYPE(%(x)s),
-                                                      0);
-
-                if (NULL == %(z)s) {
-                    %(fail)s
-                }
-            }
-
-
-            x_layout_previous = ((dnnLayout_t *)PyArray_DATA(%(x)s))[0];
-            x_buf_previous = ((void **)PyArray_DATA(%(x)s))[1];
-            buf_gz = ((void**)PyArray_DATA(%(gz)s))[1];
-
-            if (first_run) {
-                CHECK_ERR( dnnLRNCreateBackward_%(precision)s(&primitive, NULL, x_layout_previous, x_layout_previous,
+                CHECK_ERR( dnnLRNCreateBackward_%(precision)s(&primitive, NULL, MKLNdarray_LAYOUT(%(gz)s), MKLNdarray_LAYOUT(%(x)s),
                                                               %(size)s, %(alpha)s, %(beta)s, %(k)s), err );
             }
 
-            if (NULL == buf_diff) {
-                CHECK_ERR( dnnAllocateBuffer_%(precision)s(&buf_diff, x_layout_previous), err );
+            if (! (%(z)s
+                && MKLNdarray_Check((PyObject*)%(z)s)
+                && MKLNdarray_NDIM(%(z)s) == MKLNdarray_NDIM(%(x)s)
+                && MKLNdarray_DIMS(%(z)s)[0] == MKLNdarray_DIMS(%(x)s)[0]
+                && MKLNdarray_DIMS(%(z)s)[1] == MKLNdarray_DIMS(%(x)s)[1]
+                && MKLNdarray_DIMS(%(z)s)[2] == MKLNdarray_DIMS(%(x)s)[2]
+                && MKLNdarray_DIMS(%(z)s)[3] == MKLNdarray_DIMS(%(x)s)[3] )) {
+
+                if (%(z)s) Py_XDECREF(%(z)s);
+                %(z)s = (MKLNdarray*)MKLNdarray_New(MKLNdarray_NDIM(%(x)s), typenum);
+                if (NULL == %(z)s) {
+                    %(fail)s
+                }
+
+                status = MKLNdarray_set_structure(%(z)s, MKLNdarray_NDIM(%(x)s), MKLNdarray_DIMS(%(x)s));
+                if (0 != status) {
+                    %(fail)s;
+                }
+
+                status = MKLNdarray_create_buffer_from_primitive(%(z)s, &primitive, dnnResourceDiffSrc);
+                if (0 != status) {
+                    std::cout<<"MKLNdarray_create_buffer_from_primitive failed, return: "<<status<<", line: "<<__LINE__<<std::endl;
+                    exit(1);
+                }
             }
 
-            lrn_res[dnnResourceWorkspace] = ((void**)workspace_ptr)[0];
-            lrn_res[dnnResourceDiffDst] = (void*)buf_gz;
-            lrn_res[dnnResourceSrc] = (void*)x_buf_previous;
-            lrn_res[dnnResourceDiffSrc] = buf_diff;
-
+            lrn_res[dnnResourceWorkspace] = MKLNdarray_WORKSPACE(%(x)s);
+            lrn_res[dnnResourceDiffDst] = MKLNdarray_DATA(%(gz)s);
+            lrn_res[dnnResourceDiffSrc] = MKLNdarray_DATA(%(z)s);
+            lrn_res[dnnResourceSrc] = MKLNdarray_DATA(%(x)s);
             CHECK_ERR( dnnExecute_%(precision)s(primitive, lrn_res), err );
-
-            ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = x_layout_previous;
-            ((void**)PyArray_DATA(%(z)s))[1] = buf_diff;
-
             first_run = 0;
         }
         """ % locals()

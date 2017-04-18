@@ -19,7 +19,6 @@ else:
     with_mkl = theano.compile.mode.get_default_mode().including('mkl')
     without_mkl = theano.compile.mode.get_default_mode().excluding('mkl')
 
-
 class test_mkl_bn_forward(unittest.TestCase):
     def test_bn_U2I(self):
         x = T.ftensor4('x')
@@ -42,8 +41,8 @@ class test_mkl_bn_forward(unittest.TestCase):
 
     def test_bn_value(self):
         X = T.ftensor4('x')
-        Scale = T.vector('scale')
-        Shift = T.vector('shift')
+        Scale = T.fvector('scale')
+        Shift = T.fvector('shift')
 
         x_internal = U2IBatchNormalization(eps=0)(X)
         z_bn = mkl_bn.BatchNormalization(eps=0, bias=1, term=1)(x_internal, Scale, Shift)
@@ -69,25 +68,25 @@ class test_mkl_bn_forward(unittest.TestCase):
         assert numpy.allclose(new_out, ref_out)
         '''
 
-"""
+
 class test_mkl_bn_backward(unittest.TestCase):
     def test_bn_value(self):
         X = T.ftensor4('x')
-        Scale = T.vector('scale')
-        Shift = T.vector('shift')
+        Scale = T.fvector('scale')
+        Shift = T.fvector('shift')
 
-        x_internal = U2IBatchNormalization(eps=1e-5)(X)
-        z_bn = mkl_bn.BatchNormalization(eps=1e-5, bias=1, term=1)(x_internal, Scale, Shift)
+        x_internal = U2IBatchNormalization(eps=1e-4)(X)
+        z_bn = mkl_bn.BatchNormalization(eps=1e-4, bias=1, term=1)(x_internal, Scale, Shift)
         z_out = I2U()(z_bn)
         z_sum = T.sum(z_out)
         z_grad = T.grad(z_sum, [X])
 
         fgrad = theano.function([X, Scale, Shift], z_grad, mode=with_mkl)
-
         ival = numpy.random.rand(64, 5, 128, 128).astype(numpy.float32)
         sval = numpy.random.rand(5).astype(numpy.float32)
         tval = numpy.random.rand(5).astype(numpy.float32)
         fgrad(ival, sval, tval)
-"""
+
+
 if __name__ == '__main__':
     unittest.main()

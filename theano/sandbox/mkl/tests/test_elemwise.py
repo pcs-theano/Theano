@@ -72,24 +72,29 @@ class test_mkl_elemwise(unittest.TestCase):
     def test_elemwise_float64(self):
         old_floatX = theano.config.floatX
         theano.config.floatX = 'float64'
+        n = 4
+        co = [1.0, 1.0, 1.0, 1.0]
 
         a = theano.tensor.dtensor4('a')
         b = theano.tensor.dtensor4('b')
         c = theano.tensor.dtensor4('c')
+        d = theano.tensor.dtensor4('d')
 
-        a_internal = basic_ops.U2IElemwiseSum(inp_num=3, coeff=[1.0, 1.0, 1.0])(a)
-        b_internal = basic_ops.U2IElemwiseSum(inp_num=3, coeff=[1.0, 1.0, 1.0])(b)
-        c_internal = basic_ops.U2IElemwiseSum(inp_num=3, coeff=[1.0, 1.0, 1.0])(c)
-
-        z_internal = mkl_elemwise.ElemwiseSum(inp_num=3, coeff=[1.0, 1.0, 1.0])(a_internal, b_internal, c_internal)
+        a_internal = basic_ops.U2IElemwiseSum(inp_num=n, coeff=co)(a)
+        b_internal = basic_ops.U2IElemwiseSum(inp_num=n, coeff=co)(b)
+        c_internal = basic_ops.U2IElemwiseSum(inp_num=n, coeff=co)(c)
+        d_internal = basic_ops.U2IElemwiseSum(inp_num=n, coeff=co)(d)
+        z_internal = mkl_elemwise.ElemwiseSum(inp_num=n, coeff=co)(a_internal, b_internal, c_internal, d_internal)
         z = basic_ops.I2U()(z_internal)
-        f = theano.function([a, b, c], z)
+        f = theano.function([a, b, c, d], z)
 
-        ival0 = numpy.random.rand(4, 4, 4, 4).astype(theano.config.floatX)
-        ival1 = numpy.random.rand(4, 4, 4, 4).astype(theano.config.floatX)
-        ival2 = numpy.random.rand(4, 4, 4, 4).astype(theano.config.floatX)
-        assert numpy.allclose(f(ival0, ival1, ival2), ival0 + ival1 + ival2)
-        assert f(ival0, ival1, ival2).dtype == 'float64'
+        ival0 = numpy.random.rand(4, 4, 4, 4).astype(numpy.float64)
+        ival1 = numpy.random.rand(4, 4, 4, 4).astype(numpy.float64)
+        ival2 = numpy.random.rand(4, 4, 4, 4).astype(numpy.float64)
+        ival3 = numpy.random.rand(4, 4, 4, 4).astype(numpy.float64)
+
+        assert numpy.allclose(f(ival0, ival1, ival2, ival3), ival0 + ival1 + ival2 + ival3)
+        assert f(ival0, ival1, ival2, ival3).dtype == 'float64'
         theano.config.floatX = old_floatX
 
     def test_elemwise_float32(self):

@@ -400,73 +400,57 @@ class U2IGrad(BaseConvertOp):
                             node.inputs[0].type.dtype)
         ccode = """
         int status = 0;
-        if(NULL == %(z)s)
-        {
-              %(z)s = (PyArrayObject*)PyArray_ZEROS(PyArray_NDIM(%(gz)s),
-                                          PyArray_DIMS(%(gz)s),
-                                          PyArray_TYPE(%(gz)s),
-                                          0);
-              if(NULL == %(z)s)
-              {
-                    %(fail)s
-              }
+        size_t z_size[4] = {0};
+        size_t z_stride[4] = {0};
+        int ndim = 0;
+        npy_intp dims[4] = {0};
+        if(NULL == %(z)s) {
+            dims[0] = MKLNdarray_DIMS(%(gz)s)[0];
+            dims[1] = MKLNdarray_DIMS(%(gz)s)[1];
+            dims[2] = MKLNdarray_DIMS(%(gz)s)[2];
+            dims[3] = MKLNdarray_DIMS(%(gz)s)[3];
 
-              int ndim = (int)PyArray_NDIM(%(gz)s);
-              size_t*bottom_size = (size_t*)malloc(ndim*sizeof(size_t));
-              size_t*out_stride = (size_t*)malloc(ndim*sizeof(size_t));
-              if(0 == bottom_size || 0 == out_stride)
-              {
-                       printf(\"ERROR: malloc buffer in U2IGrad \\n\");
-                       exit(0);
-              }
-
-              npy_intp dataSize = 1;
-              for(int i=0;i<ndim;i++)
-              {
-                      bottom_size[i] = (size_t)PyArray_DIMS(%(z)s)[ndim-i-1];
-                      out_stride[i] = (size_t)PyArray_STRIDES(%(z)s)[ndim-i-1] / %(x_item_size)s;
-                      dataSize = dataSize * bottom_size[i];
-              }
-
-              //create usr layerout
-              status = dnnLayoutCreate_%(precision)s(&layout_user,
-                                                     ndim, bottom_size,
-                                                     out_stride);
-
-              size_t size = dnnLayoutGetMemorySize_%(precision)s(layout_user);
-              if(size != PyArray_DIMS(%(z)s)[0]*PyArray_STRIDES(%(z)s)[0])
-              {
-                      printf(\"ERROR:dnnLayoutCreate_%(precision)s: %%d , %%d in U2IGrad\\n\",size, dataSize);
-                      exit(0);
-              }
-              free(bottom_size);
-              free(out_stride);
-
-              //Get layerout buffer from input.
-              layout_internal = ((dnnLayout_t*)PyArray_DATA(%(gz)s))[0]; //get internal layerout
-              internal_buf = ((void **)PyArray_DATA(%(gz)s))[1];
-
-              status = dnnConversionCreate_%(precision)s(&from_internal, layout_internal, layout_user);
-              if(0 != status)
-              {
-                     printf(\"ERROR:dnnConversionCreate_%(precision)s\\n\");
-                     exit(0);
-              }
+            %(z)s = (PyArrayObject*)PyArray_ZEROS(MKLNdarray_NDIM(%(gz)s),
+                                                  dims,
+                                                  MKLNdarray_TYPE(%(gz)s),
+                                                  0);
+            if(NULL == %(z)s) {
+                %(fail)s;
+            }
         }
 
-        convert_resources[dnnResourceFrom] = internal_buf;
-        convert_resources[dnnResourceTo] = (void*)PyArray_DATA(%(z)s);
-        #ifdef _MKL_DEBUG_
-            printf(\"%%x, %%x , %%x to %%x\\n\",from_internal,layout_internal,internal_buf,convert_resources[dnnResourceTo]);
-        #endif
+        ndim = (int)MKLNdarray_NDIM(%(gz)s);
+        assert (ndim == DIMENSION);
 
-        //cvt
-        status = dnnExecute_%(precision)s(from_internal, convert_resources);
-        if(0 != status)
-        {
-                printf(\"ERROR:U2IGrad:%%x, %%x, %%x, status: %%d\\n\",from_internal,convert_resources[dnnResourceFrom],convert_resources[dnnResourceTo],status);
-                exit(0);
+        for(int i=0; i<DIMENSION; i++) {
+            z_size[i] = (size_t)PyArray_DIMS(%(z)s)[ndim-i-1];
+            z_stride[i] = (size_t)PyArray_STRIDES(%(z)s)[ndim-i-1] / %(x_item_size)s;
         }
+
+        //create usr layerout
+        if (NULL == layout_user) {
+            CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_user,
+                                                     ndim, z_size,
+                                                     z_stride), err);
+        }
+
+        if (! dnnLayoutCompare_%(precision)s(MKLNdarray_LAYOUT(%(gz)s),
+                                             layout_user)) {
+            if (NULL == from_internal) {
+                CHECK_ERR( dnnConversionCreate_%(precision)s(&from_internal,
+                                                             MKLNdarray_LAYOUT(%(gz)s),
+                                                             layout_user), err);
+            }
+
+            if (from_internal) {
+                CHECK_ERR( dnnConversionExecute_%(precision)s(from_internal,
+                                                              MKLNdarray_DATA(%(gz)s),
+                                                              PyArray_DATA(%(z)s)), err);
+            }
+        } else {
+            memcpy ((void*)PyArray_DATA(%(z)s), MKLNdarray_DATA(%(gz)s), PyArray_SIZE(%(z)s)*PyArray_ITEMSIZE(%(z)s));
+        }
+
         """ % sub
         return ccode
 
@@ -498,109 +482,77 @@ class I2UGrad(BaseConvertOp):
                             node.inputs[0].type.dtype)
 
         ccode = """
-      int status = 0;
-      if(NULL == %(z)s)
-      {
-            npy_intp *dims = (npy_intp*)malloc(sizeof(npy_intp) * PyArray_NDIM(%(x)s));
-            if(NULL == dims)
-            {
-                 printf(\"ERROR: malloc in I2UGrad\\n\");
-                 exit(0);
+        int status = 0;
+        int gz_ndim = 0;
+        size_t gz_size[4] = {0};
+        size_t gz_stride[4] = {0};
+
+        gz_size[0] = PyArray_DIMS(%(gz)s)[3];  //w
+        gz_size[1] = PyArray_DIMS(%(gz)s)[2];  //h
+        gz_size[2] = PyArray_DIMS(%(gz)s)[1];  //c
+        gz_size[3] = PyArray_DIMS(%(gz)s)[0];  //n
+        gz_stride[0] = 1;
+        gz_stride[1] = gz_size[0];
+        gz_stride[2] = gz_size[0] * gz_size[1];
+        gz_stride[3] = gz_size[0] * gz_size[1] * gz_size[2];
+
+        if (! (%(z)s
+            && MKLNdarray_Check((PyObject*)%(z)s)
+            && MKLNdarray_NDIM(%(z)s) == MKLNdarray_NDIM(%(x)s)
+            && MKLNdarray_DIMS(%(z)s)[0] == MKLNdarray_DIMS(%(x)s)[0]
+            && MKLNdarray_DIMS(%(z)s)[1] == MKLNdarray_DIMS(%(x)s)[1]
+            && MKLNdarray_DIMS(%(z)s)[2] == MKLNdarray_DIMS(%(x)s)[2]
+            && MKLNdarray_DIMS(%(z)s)[3] == MKLNdarray_DIMS(%(x)s)[3] )) {
+
+            if (%(z)s) Py_XDECREF(%(z)s);
+
+            %(z)s = (MKLNdarray*)MKLNdarray_New(MKLNdarray_NDIM(%(x)s), MKLNdarray_TYPE(%(x)s));
+            if (NULL == %(z)s) {
+                %(fail)s;
             }
 
-            %(z)s = (PyArrayObject*)PyArray_ZEROS(PyArray_NDIM(%(x)s),//I2UGrad
-                                         PyArray_DIMS(%(x)s),//owen
-                                         PyArray_TYPE(%(x)s),
-                                         0);
-             if(NULL == %(z)s)
-             {
-                 %(fail)s
-             }
-             free(dims);
+            status = MKLNdarray_set_structure(%(z)s, MKLNdarray_NDIM(%(x)s), MKLNdarray_DIMS(%(x)s));
+            if (0 != status) {
+                %(fail)s;
+            }
 
-             int ndim = (int)PyArray_NDIM(%(gz)s);
-             size_t*bottom_size = (size_t*)malloc(ndim*sizeof(size_t));
-             size_t*out_stride = (size_t*)malloc(ndim*sizeof(size_t));
-             if(0 == bottom_size || 0 == out_stride)
-             {
-                    printf(\"ERROR: malloc buffer in I2U \\n\");
-                    exit(0);
-             }
+            status = MKLNdarray_copy_layout(%(z)s, %(x)s);
+            if (0 != status) {
+                %(fail)s;
+            }
 
-             for(int i=0;i<ndim;i++)
-             {
-                    bottom_size[i] = (size_t)PyArray_DIMS(%(gz)s)[ndim-i-1];
-                    out_stride[i] = (size_t)PyArray_STRIDES(%(gz)s)[ndim-i-1] / %(x_item_size)s;
-             }
+            status = MKLNdarray_create_buffer_from_layout(%(z)s);
+            if (0 != status) {
+                %(fail)s;
+            }
+        }
 
-              //create usr layerout for gz
-             status = dnnLayoutCreate_%(precision)s(&layout_user,
-                                                     ndim, bottom_size,
-                                                     out_stride);
-             if(0 != status)
-             {
-                      printf(\"ERROR:dnnLayoutCreate_%(precision)s\\n\");
-                      exit(0);
-             }
-             free(bottom_size);
-             free(out_stride);
+        //create usr layerout of gz
+        if (NULL == layout_user) {
+            CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_user,
+                                                     DIMENSION, gz_size,
+                                                     gz_stride), err);
+        }
 
-             layout_internal = ((dnnLayout_t*)PyArray_DATA(%(x)s))[0]; //get internal layerout
+        if (! dnnLayoutCompare_%(precision)s(MKLNdarray_LAYOUT(%(z)s),
+                                             layout_user)) {
+            if (NULL == to_internal) {
+                CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal,
+                                                            layout_user,
+                                                            MKLNdarray_LAYOUT(%(z)s)), err);
+            }
 
-             //create internal buffer for gradI
-             if(NULL == internal_buf)
-             {
-                       status = dnnAllocateBuffer_%(precision)s(
-                                         reinterpret_cast<void **>(&internal_buf),
-                                         layout_internal);
-                       if(0 != status)
-                       {
-                               printf(\"ERROR:dnnAllocateBuffer_%(precision)s : %%d \\n\", status);
-                               exit(0);
-                       }
-              }
-
-              if(dnnLayoutGetMemorySize_%(precision)s(layout_user) != dnnLayoutGetMemorySize_%(precision)s(layout_internal))
-              {
-                            printf(\"Warning:I2UGrad: usr space: %%d not equal to internal:%%d\\n\",
-                                            dnnLayoutGetMemorySize_%(precision)s(layout_user), dnnLayoutGetMemorySize_%(precision)s(layout_internal));
-              }
-
-              status = dnnConversionCreate_%(precision)s(&to_internal, layout_user, layout_internal);
-              if(0 != status)
-              {
-                    printf(\"ERROR: dnnConversionCreate_%(precision)s in I2UGrad\\n\");
-                    exit(0);
-              }
-
-              ((void**)PyArray_DATA(%(z)s))[1] = internal_buf;
-              ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_internal;
-      }
-
-      convert_resources[dnnResourceTo] = reinterpret_cast<void *>(internal_buf);
-      convert_resources[dnnResourceFrom] = reinterpret_cast<void *>(PyArray_DATA(%(gz)s));
-
-  #ifdef _DEBUG_
-      printf(\"I2UGrad:%%x, %%x, %%x to %%x\\n\",to_internal,layout_internal,convert_resources[dnnResourceFrom],convert_resources[dnnResourceTo]);
-      printf(\"I2UGrad x: %%d,%%d,%%d,%%d\\n\",PyArray_DIMS(%(x)s)[0],PyArray_DIMS(%(x)s)[1],PyArray_DIMS(%(x)s)[2],PyArray_DIMS(%(x)s)[3]);
-      printf(\"I2UGrad gz: %%d,%%d,%%d,%%d\\n\",PyArray_DIMS(%(gz)s)[0],PyArray_DIMS(%(gz)s)[1],PyArray_DIMS(%(gz)s)[2],PyArray_DIMS(%(gz)s)[3]);
-  #endif
-
-      if(dnnLayoutGetMemorySize_%(precision)s(layout_internal) != PyArray_DIMS(%(z)s)[0] * PyArray_STRIDES(%(z)s)[0])
-      {
-            printf(\"I2UGrad int %%d != usr: %%d\\n\",dnnLayoutGetMemorySize_%(precision)s(layout_internal),PyArray_DIMS(%(z)s)[0]*PyArray_STRIDES(%(z)s)[0]);
-            printf(\"I2UGrad gz: %%d,%%d,%%d,%%d\\n\",PyArray_DIMS(%(gz)s)[0],PyArray_DIMS(%(gz)s)[1],PyArray_DIMS(%(gz)s)[2],PyArray_DIMS(%(gz)s)[3]);
-            printf(\"I2UGrad x: %%d,%%d,%%d,%%d\\n\",PyArray_DIMS(%(x)s)[0],PyArray_DIMS(%(x)s)[1],PyArray_DIMS(%(x)s)[2],PyArray_DIMS(%(x)s)[3]);
-      }
-
-      //cvt
-      status = dnnExecute_%(precision)s(to_internal, convert_resources);
-      if(0 != status)
-      {
-                printf(\"ERROR:dnnExecute_%(precision)s\\n\");
-                exit(0);
-      }
-     """ % sub
+            if (to_internal) {
+                CHECK_ERR( dnnConversionExecute_%(precision)s(to_internal,
+                                                              PyArray_DATA(%(gz)s),
+                                                              MKLNdarray_DATA(%(z)s)), err);
+            }
+        } else {
+            memcpy(MKLNdarray_DATA(%(z)s),
+                   PyArray_DATA(%(gz)s),
+                   dnnLayoutGetMemorySize_%(precision)s(MKLNdarray_LAYOUT(%(z)s)));
+        }
+        """ % sub
         return ccode
 
 

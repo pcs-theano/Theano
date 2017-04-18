@@ -97,6 +97,7 @@ class U2I_BN(BaseConvertOp):
             raise Exception('Type %s is not supported!' % node.inputs[0].type.dtype)
 
         ccode = """
+        int ret = 0;
         int ndim = PyArray_NDIM(%(x)s);
         int dtype = PyArray_TYPE(%(x)s);
         npy_intp* d = PyArray_DIMS(%(x)s);
@@ -115,8 +116,8 @@ class U2I_BN(BaseConvertOp):
             %(fail)s;
         }
 
-        int status = MKLNdarray_set_structure(%(z)s, ndim, dims);
-        if (status != 0) {
+        ret = MKLNdarray_set_structure(%(z)s, ndim, dims);
+        if (ret != 0) {
             %(fail)s;
         }
 
@@ -132,7 +133,7 @@ class U2I_BN(BaseConvertOp):
 
         CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_user, DIMENSION, bottomSize, bottomStride), err);
         CHECK_ERR( dnnBatchNormalizationCreateForward_%(precision)s(&primitive, NULL, layout_user, %(eps)s), err);
-        int ret = MKLNdarray_create_buffer_from_primitive(%(z)s, &primitive, dnnResourceSrc);
+        ret = MKLNdarray_create_buffer_from_primitive(%(z)s, &primitive, dnnResourceSrc);
         std::cout<<"ret:"<<ret<<std::endl; 
         if (!dnnLayoutCompare_%(precision)s(layout_user, MKLNdarray_LAYOUT(%(z)s))) {
             if (NULL == to_internal) {
@@ -200,6 +201,7 @@ class I2IBN(BaseConvertOp):
             raise Exception('Type %s is not supported' % x.type.dtype)
 
         ccode = """
+            int status = 0;
             assert (MKLNdarray_Check((PyObject*)%(x)s));
             int ndim = %(x)s->nd;
             Py_XDECREF(%(z)s);
@@ -209,7 +211,7 @@ class I2IBN(BaseConvertOp):
                 %(fail)s;
             }
 
-            int status = MKLNdarray_set_structure(%(z)s, ndim, %(x)s->user_structure);
+            status = MKLNdarray_set_structure(%(z)s, ndim, %(x)s->user_structure);
             if (status != 0) {
                 %(fail)s;
             }
@@ -313,6 +315,7 @@ class U2I_Conv(BaseConvertOp):
             raise Exception('Type %s is not supported!' % node.inputs[0].type.dtype)
 
         ccode = """
+        int status = 0;
         int ndim = PyArray_NDIM(%(x)s);
         int dtype = PyArray_TYPE(%(x)s);
         npy_intp* d = PyArray_DIMS(%(x)s);
@@ -321,6 +324,7 @@ class U2I_Conv(BaseConvertOp):
 
         size_t dims[32] = {0};
 
+        const int group = %(grp)s;
         int convPadding[2];
         size_t convStride[2], weightSize[5], weightStride[5], imageSize[4], imageStride[4], zSize[4], zStride[4];
         convStride[0] = %(dW)s;
@@ -367,12 +371,11 @@ class U2I_Conv(BaseConvertOp):
             dims[i] = (size_t)d[i];
         }
 
-        int status = MKLNdarray_set_structure(%(z)s, ndim, dims);
+        status = MKLNdarray_set_structure(%(z)s, ndim, dims);
         if (status != 0) {
             %(fail)s;
         }
 
-        const int group = %(grp)s;
         //create user layout
         CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_user, DIMENSION, imageSize, imageStride), err );
         CHECK_ERR( dnnConvolutionCreateForward_%(precision)s(&primitive, NULL,
