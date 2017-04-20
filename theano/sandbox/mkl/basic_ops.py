@@ -76,7 +76,7 @@ class BaseConvertOp(MKLOp):
         elif "float64" == node.inputs[0].type.dtype:
             precision = 'F64'
         else:
-            raise Exception("Type %s not implemented" %
+            raise TypeError("Type %s not implemented" %
                             node.inputs[0].type.dtype)
         ccode = """
         if (layout_internal != NULL) {
@@ -152,7 +152,7 @@ class U2IPool(BaseConvertOp):
         elif 'float64' == node.inputs[0].type.dtype:
             precision = 'F64'
         else:
-            raise Exception("Type %s is not supported!" %
+            raise TypeError("Type %s is not supported!" %
                             node.inputs[0].type.dtype)
 
         fail = sub['fail']
@@ -283,13 +283,14 @@ class I2U(BaseConvertOp):
 class U2IRelu(BaseConvertOp):
     __props__ = ('slope', )
 
-    def __init__(self, slope=1):
+    def __init__(self, slope=0):
         self.slope = slope
 
     def make_node(self, x):
         x = T.as_tensor_variable(x)
+        out = MKLNdarrayType(broadcastable=x.type.broadcastable, dtype=x.dtype)()
 
-        return Apply(self, [x], [x.type()])
+        return Apply(self, [x], [out])
 
     def grad(self, inp, grads):
         x, = inp
@@ -307,12 +308,19 @@ class U2IRelu(BaseConvertOp):
         elif 'float64' == node.inputs[0].type.dtype:
             precision = 'F64'
         else:
-            raise Exception("Type %s is not supported!" %
+            raise TypeError("Type %s is not supported!" %
                             node.inputs[0].type.dtype)
 
         fail = sub['fail']
 
         ccode = """
+            int typenum = PyArray_TYPE(%(x)s);
+            int ndim = PyArray_NDIM(%(x)s);
+            size_t dims[MAX_NDIM] = {0};
+            for (int i = 0; i < ndim; i++) {
+                dims[i] = (size_t)PyArray_DIMS(%(x)s)[i];
+            }
+
             if (1 == first_run) {
                 bottomSize[0] = PyArray_DIMS(%(x)s)[3];  //w
                 bottomSize[1] = PyArray_DIMS(%(x)s)[2];  //h
@@ -325,46 +333,49 @@ class U2IRelu(BaseConvertOp):
 
                 //create user layout
                 CHECK_ERR( dnnLayoutCreate_%(precision)s(&layout_user, DIMENSION, bottomSize, bottomStride), err );
-
                 CHECK_ERR( dnnReLUCreateForward_%(precision)s(&primitive, NULL, layout_user, %(slope)s), err );
+            }
 
-                //create internal layout
-                CHECK_ERR( dnnLayoutCreateFromPrimitive_%(precision)s(&layout_internal, primitive, dnnResourceSrc), err );
+            if ( !(%(z)s
+                   && MKLNdarray_Check((PyObject *)%(z)s)
+                   && MKLNdarray_NDIM(%(z)s) == PyArray_NDIM(%(x)s)
+                   && MKLNdarray_DIMS(%(z)s)[0] == PyArray_DIMS(%(x)s)[0]
+                   && MKLNdarray_DIMS(%(z)s)[1] == PyArray_DIMS(%(x)s)[1]
+                   && MKLNdarray_DIMS(%(z)s)[2] == PyArray_DIMS(%(x)s)[2]
+                   && MKLNdarray_DIMS(%(z)s)[3] == PyArray_DIMS(%(x)s)[3]) ) {
+                if (%(z)s) Py_XDECREF(%(z)s);
 
-                if (!dnnLayoutCompare_%(precision)s(layout_user, layout_internal)) {
-                    if(NULL == to_internal) {
-                        CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_user, layout_internal), err );
+                %(z)s = (MKLNdarray *)MKLNdarray_New(PyArray_NDIM(%(x)s), typenum);
+                if (NULL == %(z)s) {
+                    %(fail)s
+                }
+
+                int status = MKLNdarray_set_structure(%(z)s, ndim, dims);
+                if (status != 0) {
+                    %(fail)s
+                }
+
+                status = MKLNdarray_create_buffer_from_primitive(%(z)s, &primitive, dnnResourceSrc);
+                if (status != 0) {
+                    %(fail)s
+                }
+            }
+
+            if (1 == first_run) {
+                if (!dnnLayoutCompare_%(precision)s(layout_user, MKLNdarray_LAYOUT(%(z)s))) {
+                    if (NULL == to_internal) {
+                        CHECK_ERR( dnnConversionCreate_%(precision)s(&to_internal, layout_user, MKLNdarray_LAYOUT(%(z)s)), err );
                     }
                 }
             }
 
-            if (NULL == %(z)s) {
-                %(z)s = (PyArrayObject*)PyArray_ZEROS(DIMENSION,
-                                                      PyArray_DIMS(%(x)s),
-                                                      PyArray_TYPE(%(x)s),
-                                                      0);
-                if(NULL == %(z)s) {
-                    %(fail)s
-                }
-
-                if (NULL == internal_buf) {
-                    CHECK_ERR( dnnAllocateBuffer_%(precision)s((void**)&internal_buf, layout_internal), err );
-                }
-            }
-
             if (to_internal) {
-                convert_resources[dnnResourceFrom] = PyArray_DATA(%(x)s);
-                convert_resources[dnnResourceTo] = (void *)(internal_buf);
-
-                CHECK_ERR( dnnExecute_%(precision)s(to_internal, convert_resources), err );
+                CHECK_ERR( dnnConversionExecute_%(precision)s(to_internal,
+                                                              PyArray_DATA(%(x)s),
+                                                              MKLNdarray_DATA(%(z)s)), err );
             } else {
-                internal_buf = (PyArray_DATA(%(x)s));
+                memcpy(MKLNdarray_DATA(%(z)s), (void*)PyArray_DATA(%(x)s), %(z)s->data_size);
             }
-
-            if(layout_internal != ((dnnLayout_t*)PyArray_DATA(%(z)s))[0])
-                ((dnnLayout_t*)PyArray_DATA(%(z)s))[0] = layout_internal;
-            if(internal_buf != ((void**)PyArray_DATA(%(z)s))[1])
-                ((void**)PyArray_DATA(%(z)s))[1] = internal_buf;
 
             first_run = 0;
 
@@ -396,7 +407,7 @@ class U2IGrad(BaseConvertOp):
             sub['precision'] = "F64"
             sub['x_item_size'] = 8
         else:
-            raise Exception("Type %s not implemented" %
+            raise TypeError("Type %s not implemented" %
                             node.inputs[0].type.dtype)
         ccode = """
         int status = 0;
@@ -478,7 +489,7 @@ class I2UGrad(BaseConvertOp):
             sub['x_item_size'] = 8
             sub["type"] = "double"
         else:
-            raise Exception("Type %s not implemented" %
+            raise TypeError("Type %s not implemented" %
                             node.inputs[0].type.dtype)
 
         ccode = """
@@ -591,7 +602,7 @@ class U2ILRN(BaseConvertOp):
         elif 'float64' == node.inputs[0].type.dtype:
             precision = 'F64'
         else:
-            raise Exception('Type %s is not supported!' % node.inputs[0].type.dtype)
+            raise TypeError('Type %s is not supported!' % node.inputs[0].type.dtype)
 
         fail = sub['fail']
 
@@ -724,7 +735,7 @@ class U2IConv(BaseConvertOp):
         elif 'float64' == node.inputs[0].type.dtype:
             precision = 'F64'
         else:
-            raise Exception("Type %s is not supported!" %
+            raise TypeError("Type %s is not supported!" %
                             node.inputs[0].type.dtype)
         fail = sub['fail']
 
@@ -865,7 +876,7 @@ class U2IElemwiseSum(BaseConvertOp):
             sub['type'] = 'double'
             precision = 'F64'
         else:
-            raise Exception('Type %s is not supported!' % node.inputs[0].type.dtype)
+            raise TypeError('Type %s is not supported!' % node.inputs[0].type.dtype)
 
         fail = sub['fail']
         sub['len'] = inp_num
@@ -976,7 +987,7 @@ class U2IBatchNormalization(BaseConvertOp):
         elif 'float64' == node.inputs[0].type.dtype:
             precision = 'F64'
         else:
-            raise Exception('Type %s is not supported!' % node.inputs[0].type.dtype)
+            raise TypeError('Type %s is not supported!' % node.inputs[0].type.dtype)
 
         fail = sub['fail']
 
@@ -1075,7 +1086,7 @@ class U2IConcatenate(BaseConvertOp):
             sub['type'] = 'double'
             sub['precision'] = 'F64'
         else:
-            raise Exception("Type %s not implemented" %
+            raise TypeError("Type %s not implemented" %
                             node.inputs[0].type.dtype)
 
         sub = sub.copy()
