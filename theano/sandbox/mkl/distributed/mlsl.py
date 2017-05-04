@@ -63,7 +63,7 @@ def set_param_count(param_count):
     mlsl_set_param_count(param_count)
 
 
-def coll_perform(blocking, inbuf, dtype, shapes, op_idx):
+def coll_perform(inbuf, dtype, shapes, op_idx):
     # Adjust datatype
     if dtype == 'float32':
         mlsl_dtype = mlsl_float
@@ -76,10 +76,8 @@ def coll_perform(blocking, inbuf, dtype, shapes, op_idx):
         mlsl_create_operation(op_idx, incount, mlsl_dtype)
         op_indexes.append(op_idx)
 
-    if blocking:  # or not "start" in is_start:
-        pass
-    else:
-        mlsl_start(op_idx, inbuf)
+    # non-blocking exchange of the gradient w.r.t params
+    mlsl_start(op_idx, inbuf)
 
 
 def wait_perform(op_idx):

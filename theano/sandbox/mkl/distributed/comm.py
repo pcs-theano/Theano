@@ -56,10 +56,9 @@ def addr(x):
 
 
 class AllReduce(Distribution, theano.Op):
-    __props__ = ('blocking', 'inplace', 'seqn')
+    __props__ = ('inplace', 'seqn')
 
-    def __init__(self, blocking=True, inplace=False, seqn=0):
-        self.blocking = blocking
+    def __init__(self, inplace=False, seqn=0):
         self.inplace = inplace
         if self.inplace:
             self.destroy_map = {0: [0]}
@@ -69,25 +68,14 @@ class AllReduce(Distribution, theano.Op):
 
     def make_node(self, x):
         x = theano.tensor.as_tensor_variable(x)
-        outputs = [x.type(), ]
-        # Non-blocking call return an extra int64 output as a placeholder for additional info
-        if not self.blocking:
-            y = theano.tensor.lscalar()
-            outputs.append(y.type())
+        outputs = [x.type()]
         return theano.Apply(self, [x], outputs)
 
     def perform(self, node, inputs, outputs):
         x, = inputs
         inbuf = addr(x)
 
-        if self.blocking:
-            y, = outputs
-            req_addr = 0
-        else:
-            # Non-blocking call return an extra output - integer reqeust
-            y, req = outputs
-            req[0] = np.empty((), dtype=np.int64)
-            req_addr = addr(req[0])  # noqa
+        y, = outputs
 
         if self.inplace:
             y[0] = x
@@ -95,32 +83,27 @@ class AllReduce(Distribution, theano.Op):
         else:
             y[0] = np.empty(x.shape, dtype=x.dtype)
 
-        # MLSL does in-place communication, so no extra buffer for output
-        coll_perform(self.blocking, inbuf, x.dtype, x.shape, self.seqn)
+        # MLSL does non-blocking and in-place communication, so no extra buffer for output
+        coll_perform(inbuf, x.dtype, x.shape, self.seqn)
 
-        if not self.blocking:
-            wait_perform(self.seqn)
+        wait_perform(self.seqn)
 
     def grad(self, inputs, grads):
-        return [coll(grads[0], kind='Allreduce', blocking=self.blocking)]
+        return [allreduce(grads[0])]
 
 
-def allreduce(x, blocking=True, inplace=False):
+def allreduce(x, inplace=False):
     global seqn
     seqn += 1
 
-    if blocking:
-        return AllReduce(blocking=blocking, inplace=inplace)(x)
-    else:
-        return AllReduce(blocking=blocking, inplace=inplace, seqn=seqn)(x)
+    return AllReduce(inplace=inplace, seqn=seqn)(x)
 
 
 @local_optimizer([AllReduce()], inplace=True)
 def local_allreduce_inplace(node):
     op = node.op
     if isinstance(op, AllReduce) and op.inplace is False:
-        outputs = AllReduce(blocking=op.blocking,
-                            inplace=True,
+        outputs = AllReduce(inplace=True,
                             seqn=op.seqn)(*node.inputs)
         if isinstance(outputs, list):
             return outputs
