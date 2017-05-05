@@ -1,0 +1,4 @@
+icpc -Wall -fPIC -c ./theano_binding.cpp -I<PATH_TO_mlsl.hpp>
+icpc -shared -o libmlsl_theano.so.1.0 -Wl,-soname,libmlsl_theano.so.1  ./theano_binding.o  -L<PATH_TO_libmlsl> -lmlsl
+export LD_LIBRARY_PATH="<PATH_TO_ libmlsl_theano.so.1.0>:${LD_LIBRARY_PATH}"
+change the library in the mlsl.py
