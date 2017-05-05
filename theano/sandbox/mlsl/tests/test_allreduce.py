@@ -11,25 +11,26 @@ if not mkl.mkl_available:
     raise SkipTest('Optional package MKL disabled')
 
 try:
-    import theano.sandbox.mkl.distributed.comm as comm
+    import theano.sandbox.mlsl.distributed as distributed
 except ImportError as e:
     print ('Failed to import mkl.distributed module, please double check')
 
-dist = comm.Distribution()
+dist = distributed.Distribution()
 print ('dist.rank: ', dist.rank)
 print ('dist.size: ', dist.size)
 
-comm.set_global_batch_size(2)
-comm.set_param_count(1)
+distributed.set_global_batch_size(2)
+distributed.set_param_count(1)
 
-shape = (1,1, 5, 5)
+shape = (1, 1, 5, 5)
 base_array = numpy.ones(shape, dtype=numpy.float32)
 input = T.ftensor4('input')
 
 input_array = base_array * (dist.rank + 1)
 print ('input_array:', input_array)
 
-out = comm.allreduce(input)
+out = distributed.allreduce(input)
+
 f = theano.function([theano.compile.io.In(input, mutable=True, borrow=True)],
                     theano.compile.io.Out(out, borrow=True))
 result = f(input_array)
